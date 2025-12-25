@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline'; connect-src 'self' http://localhost:3000 ws://localhost:3000 https://cdnjs.cloudflare.com;">
+    <title>Remote Desktop</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #333;
+        }
+        .container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            width: 90%;
+            max-width: 1200px;
+            height: 90vh;
+            display: flex;
+            flex-direction: column;
+        }
+        header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 12px 12px 0 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .status {
+            padding: 8px 16px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 20px;
+            font-size: 14px;
+        }
+        .status.connected { background: #10b981; }
+        .main {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+        .sidebar {
+            width: 300px;
+            padding: 20px;
+            background: #f8fafc;
+            overflow-y: auto;
+        }
+        .section {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        .section h3 {
+            font-size: 14px;
+            margin-bottom: 10px;
+            color: #1e293b;
+        }
+        .btn {
+            width: 100%;
+            padding: 10px;
+            border: none;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-bottom: 8px;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .btn-secondary { background: #10b981; color: white; }
+        input {
+            width: 100%;
+            padding: 8px;
+            border: 2px solid #e2e8f0;
+            border-radius: 6px;
+            margin-bottom: 8px;
+        }
+        .video-area {
+            flex: 1;
+            background: #0f172a;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+        video {
+            max-width: 100%;
+            max-height: 100%;
+            display: none;
+        }
+        video.active { display: block; }
+        .hidden { display: none; }
+        .room-info {
+            background: #f1f5f9;
+            padding: 10px;
+            border-radius: 6px;
+            margin-top: 10px;
+        }
+        .room-id {
+            font-family: monospace;
+            font-weight: bold;
+            color: #667eea;
+            font-size: 16px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🖥️ Remote Desktop</h1>
+            <div class="status" id="status">Disconnected</div>
+        </header>
+        <div class="main">
+            <div class="sidebar">
+                <div class="section">
+                    <h3>Host Session</h3>
+                    <button id="shareBtn" class="btn btn-primary">Share Screen</button>
+                    <div id="roomInfo" class="room-info hidden">
+                        <p>Room ID:</p>
+                        <div class="room-id" id="roomId"></div>
+                        <button id="copyBtn" class="btn btn-secondary" style="margin-top: 8px;">Copy ID</button>
+                    </div>
+                </div>
+                <div class="section">
+                    <h3>Join Session</h3>
+                    <input type="text" id="joinRoomId" placeholder="Enter Room ID">
+                    <button id="joinBtn" class="btn btn-secondary">Join</button>
+                </div>
+                <div class="section">
+                    <h3>Connection Info</h3>
+                    <div id="info" style="font-size: 12px; color: #64748b;">
+                        <p>No connection</p>
+                    </div>
+                </div>
+            </div>
+            <div class="video-area">
+                <video id="remoteVideo" autoplay playsinline></video>
+                <div id="videoStatus" style="color: #94a3b8;">No stream</div>
+            </div>
+        </div>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.6.0/socket.io.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/simple-peer/9.11.1/simplepeer.min.js"></script>
+    <script src="renderer.js"></script>
+</body>
+</html>

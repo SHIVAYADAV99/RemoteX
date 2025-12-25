@@ -1,0 +1,29 @@
+{
+  "name": "remote-desktop-signaling-server",
+  "version": "1.0.0",
+  "description": "Secure WebRTC signaling server for remote desktop",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "prod": "NODE_ENV=production node server.js",
+    "generate-certs": "openssl req -nodes -new -x509 -keyout server-key.pem -out server-cert.pem -days 365"
+  },
+  "keywords": [
+    "webrtc",
+    "signaling",
+    "remote-desktop",
+    "socket.io"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "bcrypt": "^5.1.1",
+    "express": "^4.22.1",
+    "socket.io": "^4.8.3"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1",
+    "selfsigned": "^5.2.0"
+  }
+}
