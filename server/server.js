@@ -121,7 +121,37 @@ io.on('connection', (socket) => {
     try {
       socket.join(roomId);
       console.log(`[COMPAT] ${socket.id} joined room ${roomId}`);
-      // Notify others in the room that a user connected
+
+      // If a formal session exists, add as client
+      const sess = sessions.get(roomId);
+      if (sess) {
+        sess.clients.push(socket.id);
+        connections.set(socket.id, { role: 'client', sessionId: roomId });
+        console.log(`[COMPAT] Added client ${socket.id} to existing session ${roomId}`);
+        // Notify host
+        io.to(sess.host).emit('client-joined', { clientId: socket.id, totalClients: sess.clients.length });
+        socket.to(roomId).emit('user-connected', socket.id);
+        return;
+      }
+
+      // Otherwise create a lightweight session with this socket as host
+      const session = {
+        id: roomId,
+        host: socket.id,
+        passwordHash: null,
+        clients: [],
+        created: Date.now(),
+        permissions: {
+          viewScreen: true,
+          controlMouse: true,
+          controlKeyboard: true
+        }
+      };
+      sessions.set(roomId, session);
+      connections.set(socket.id, { role: 'host', sessionId: roomId });
+      console.log(`[COMPAT] Created lightweight session ${roomId} with host ${socket.id}`);
+
+      // Notify others in the room (none yet)
       socket.to(roomId).emit('user-connected', socket.id);
     } catch (e) {
       console.error('[COMPAT] join-room error:', e);
@@ -152,8 +182,8 @@ io.on('connection', (socket) => {
         created: Date.now(),
         permissions: {
           viewScreen: true,
-          controlMouse: false,
-          controlKeyboard: false
+          controlMouse: true,
+          controlKeyboard: true
         }
       };
       
@@ -361,6 +391,30 @@ io.on('connection', (socket) => {
     }
     
     connections.delete(socket.id);
+  });
+
+  // Explicit leave-room (client or host can call)
+  socket.on('leave-room', ({ roomId }) => {
+    try {
+      const conn = connections.get(socket.id);
+      const session = sessions.get(roomId || (conn && conn.sessionId));
+      if (!session) return;
+
+      if (conn && conn.role === 'host') {
+        // Host leaving: notify clients and delete session
+        session.clients.forEach(clientId => io.to(clientId).emit('host-disconnected'));
+        sessions.delete(session.id);
+        logger.log('host-left', { sessionId: session.id, hostId: socket.id });
+      } else {
+        // Client leaving
+        session.clients = session.clients.filter(id => id !== socket.id);
+        io.to(session.host).emit('client-disconnected', { clientId: socket.id, totalClients: session.clients.length });
+        connections.delete(socket.id);
+        logger.log('client-left', { sessionId: session.id, clientId: socket.id });
+      }
+    } catch (e) {
+      console.error('leave-room error:', e);
+    }
   });
 });
 

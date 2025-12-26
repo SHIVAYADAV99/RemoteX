@@ -1,7 +1,7 @@
-import RemoteDesktopApp from './components/RemoteDesktopApplication';
+import RemoteXApp from './RemoteDesktopApplication';
 
 function App() {
-  return <RemoteDesktopApp />;
+  return <RemoteXApp />;
 }
 
 export default App;
