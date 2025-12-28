@@ -6,13 +6,13 @@
   "scripts": {
     "dev": "vite",
     "devtools": "react-devtools",
-    "build": "vite build && electron-builder",
-    "build:win": "vite build && electron-builder --win",
-    "build:mac": "vite build && electron-builder --mac",
-    "build:linux": "vite build && electron-builder --linux",
+    "build": "vite build && electron-rebuild -f -w robotjs && electron-builder",
+    "build:win": "vite build && electron-rebuild -f -w robotjs && electron-builder --win",
+    "build:linux": "vite build && electron-rebuild -f -w robotjs && electron-builder --linux",
     "start": "vite build && electron .",
     "server": "node signaling-server.js",
-    "electron": "electron ."
+    "electron": "electron .",
+    "postinstall": "electron-builder install-app-deps"
   },
   "keywords": [
     "electron",
@@ -21,6 +21,39 @@
   ],
   "author": "Your Name",
   "license": "MIT",
+  "build": {
+    "appId": "com.remotex.app",
+    "productName": "RemoteX",
+    "files": [
+      "dist/**/*",
+      "main.js",
+      "preload.js",
+      "node_modules/**/*",
+      "signaling-server.js"
+    ],
+    "asar": true,
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "icon.ico",
+      "cscLink": null,
+      "forceCodeSigning": false
+    },
+    "linux": {
+      "target": [
+        "deb"
+      ],
+      "category": "Utility"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
   "devDependencies": {
     "@electron/rebuild": "^4.0.2",
     "autoprefixer": "^10.4.18",
@@ -28,8 +61,8 @@
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
     "@vitejs/plugin-react": "^4.2.1",
-    "electron": "^39.2.7",
-    "electron-builder": "^24.9.1",
+    "electron": "^30.0.0",
+    "electron-builder": "^24.13.3",
     "electron-rebuild": "^3.2.9",
     "electron-vite": "^5.0.0",
     "tailwindcss": "^3.4.1",

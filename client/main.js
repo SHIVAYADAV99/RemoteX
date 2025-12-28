@@ -24,8 +24,8 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
-      webSecurity: true,
-      allowRunningInsecureContent: false,
+      webSecurity: false, // TEMPORARY DEBUG: Disable security to rule out CSP/CORS
+      allowRunningInsecureContent: true,
       enableRemoteModule: false,
       experimentalFeatures: false
     }
