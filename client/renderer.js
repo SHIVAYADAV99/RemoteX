@@ -1,4 +1,5 @@
-const socket = io('http://localhost:3000', {
+const signalServerUrl = `${window.location.protocol}//${window.location.hostname}:3000`;
+const socket = io(signalServerUrl, {
   transports: ['polling', 'websocket'],
   timeout: 20000,
   reconnectionAttempts: 5
@@ -8,6 +9,7 @@ const peers = {}; // host: map of viewerId -> SimplePeer
 let localStream = null;
 let currentRoomId = null;
 let isHost = false;
+let publicIP = 'Fetching...';
 
 // DOM Elements
 const shareBtn = document.getElementById('shareBtn');
@@ -22,6 +24,24 @@ const disconnectBtn = document.getElementById('disconnectBtn');
 const status = document.getElementById('status');
 const videoStatus = document.getElementById('videoStatus');
 const info = document.getElementById('info');
+
+// Fetch Public IP
+async function fetchPublicIP() {
+  try {
+    const response = await fetch('https://api.ipify.org?format=json');
+    const data = await response.json();
+    publicIP = data.ip;
+    console.log('Public IP fetched:', publicIP);
+    return data.ip;
+  } catch (err) {
+    console.error('Failed to fetch public IP:', err);
+    publicIP = 'Unavailable';
+    return null;
+  }
+}
+
+// Initialize IP fetch
+fetchPublicIP();
 
 // Generate random room ID
 function generateRoomId() {
@@ -51,9 +71,9 @@ shareBtn.addEventListener('click', async () => {
 
     console.log('Getting sources...');
     const sources = await window.electron.getSources();
-    
+
     console.log('Sources:', sources);
-    
+
     if (sources.length === 0) {
       alert('No sources available');
       return;
@@ -61,7 +81,7 @@ shareBtn.addEventListener('click', async () => {
 
     const source = sources[0];
     console.log('Using source:', source.name);
-    
+
     const constraints = {
       audio: false,
       video: {
@@ -78,18 +98,18 @@ shareBtn.addEventListener('click', async () => {
 
     localStream = await navigator.mediaDevices.getUserMedia(constraints);
     console.log('Got local stream');
-    
+
     currentRoomId = generateRoomId();
     isHost = true;
-    
+
     socket.emit('join-room', currentRoomId);
-    
+
     roomIdDisplay.textContent = currentRoomId;
     roomInfo.classList.remove('hidden');
     if (remoteControlToggle) remoteControlToggle.checked = true; // default enabled
     shareBtn.disabled = true;
     shareBtn.textContent = 'Sharing...';
-    
+
     updateStatus('Waiting for connection...', false);
     videoStatus.textContent = 'Waiting for viewer...';
 
@@ -111,16 +131,17 @@ shareBtn.addEventListener('click', async () => {
     } catch (e) {
       console.warn('Failed to attach ended handler:', e);
     }
-    
+
     info.innerHTML = `
       <p><strong>Status:</strong> Hosting</p>
       <p><strong>Room:</strong> ${currentRoomId}</p>
+      <p><strong>Public IP:</strong> ${publicIP}</p>
       <p><strong>Stream:</strong> Active</p>
     `;
-  
-  joinBtn.disabled = true;
-  joinRoomId.disabled = true;
-  if (remoteControlToggle) remoteControlToggle.disabled = true;
+
+    joinBtn.disabled = true;
+    joinRoomId.disabled = true;
+    if (remoteControlToggle) remoteControlToggle.disabled = true;
   } catch (error) {
     console.error('Error sharing screen:', error);
     alert('Failed to share screen: ' + (error && error.message ? error.message : error));
@@ -236,7 +257,7 @@ socket.io.on('upgradeError', (err) => {
 socket.on('user-connected', (userId) => {
   console.log('👤 User connected:', userId);
   console.log('isHost:', isHost, 'localStream:', localStream);
-  
+
   if (isHost && localStream) {
     console.log('Creating peer as initiator');
     console.log('Stream tracks:', localStream.getTracks());
@@ -271,13 +292,25 @@ socket.on('user-connected', (userId) => {
       console.log('⚠️ Peer connection closed for', userId);
       delete peers[userId];
       const count = Object.keys(peers).length;
-      info.innerHTML = `\n        <p><strong>Status:</strong> Connected</p>\n        <p><strong>Room:</strong> ${currentRoomId}</p>\n        <p><strong>Viewers:</strong> ${count}</p>\n        <p><strong>Streaming:</strong> ${localStream.getVideoTracks()[0].label}</p>\n      `;
+      info.innerHTML = `
+        <p><strong>Status:</strong> Connected</p>
+        <p><strong>Room:</strong> ${currentRoomId}</p>
+        <p><strong>Public IP:</strong> ${publicIP}</p>
+        <p><strong>Viewers:</strong> ${count}</p>
+        <p><strong>Streaming:</strong> ${localStream.getVideoTracks()[0].label}</p>
+      `;
     });
 
     const count = Object.keys(peers).length;
     updateStatus('Connected', true);
     videoStatus.textContent = 'Viewer connected';
-    info.innerHTML = `\n      <p><strong>Status:</strong> Connected</p>\n      <p><strong>Room:</strong> ${currentRoomId}</p>\n      <p><strong>Viewers:</strong> ${count}</p>\n      <p><strong>Streaming:</strong> ${localStream.getVideoTracks()[0].label}</p>\n    `;
+    info.innerHTML = `
+      <p><strong>Status:</strong> Connected</p>
+      <p><strong>Room:</strong> ${currentRoomId}</p>
+      <p><strong>Public IP:</strong> ${publicIP}</p>
+      <p><strong>Viewers:</strong> ${count}</p>
+      <p><strong>Streaming:</strong> ${localStream.getVideoTracks()[0].label}</p>
+    `;
   } else {
     console.log('⚠️ Cannot create peer - missing requirements');
   }
@@ -314,7 +347,7 @@ socket.on('remote-control', async ({ fromId, command }) => {
 socket.on('signal', (data) => {
   console.log('Received signal from:', data.from);
   console.log('Current peer state:', peer ? 'exists' : 'null', 'isHost:', isHost);
-  
+
   if (isHost) {
     const p = peers[data.from];
     if (p) {
@@ -328,7 +361,7 @@ socket.on('signal', (data) => {
 
   if (!peer && !isHost) {
     console.log('Creating peer as receiver');
-    
+
     peer = new SimplePeer({
       initiator: false,
       trickle: false,
@@ -339,7 +372,7 @@ socket.on('signal', (data) => {
         ]
       }
     });
-    
+
     peer.on('signal', (signal) => {
       console.log('Sending signal back to host');
       socket.emit('signal', {
@@ -347,25 +380,25 @@ socket.on('signal', (data) => {
         signal: signal
       });
     });
-    
+
     peer.on('stream', (stream) => {
       console.log('🎉 RECEIVED STREAM!', stream);
       console.log('Video tracks:', stream.getVideoTracks());
       console.log('Audio tracks:', stream.getAudioTracks());
-      
+
       remoteVideo.srcObject = stream;
       remoteVideo.classList.add('active');
-      
+
       console.log('Video element:', remoteVideo);
       console.log('Video ready state:', remoteVideo.readyState);
-      
+
       remoteVideo.play()
         .then(() => console.log('✅ Video playing'))
         .catch(err => console.error('❌ Error playing video:', err));
-      
+
       videoStatus.style.display = 'none';
       updateStatus('Connected', true);
-      
+
       info.innerHTML = `
         <p><strong>Status:</strong> Connected</p>
         <p><strong>Room:</strong> ${currentRoomId}</p>
@@ -373,20 +406,20 @@ socket.on('signal', (data) => {
         <p><strong>Tracks:</strong> ${stream.getVideoTracks().length} video</p>
       `;
     });
-    
+
     peer.on('error', (err) => {
       console.error('❌ Peer error:', err);
       alert('Connection error: ' + err.message);
     });
-    
+
     peer.on('connect', () => {
       console.log('✅ Peer data channel connected');
     });
-    
+
     peer.on('close', () => {
       console.log('⚠️ Peer connection closed');
     });
-    
+
     console.log('Signaling peer with received data');
     peer.signal(data.signal);
   } else if (peer) {

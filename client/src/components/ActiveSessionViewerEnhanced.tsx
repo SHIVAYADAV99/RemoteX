@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Hand, MousePointer, Keyboard, Maximize, Minimize, Play, Pause, ZoomIn, ZoomOut, X, Move } from 'lucide-react';
+import LoadingOverlay from './LoadingOverlay';
 
 interface Ripple {
     id: number;
@@ -13,6 +14,7 @@ interface ActiveSessionViewerEnhancedProps {
     mousePos: { x: number; y: number };
     videoRef: React.RefObject<HTMLVideoElement>;
     canvasRef: React.RefObject<HTMLCanvasElement>;
+    iceState?: string;
     onToggleControl: () => void;
     onDisconnect: () => void;
     onCanvasClick: (e: React.MouseEvent) => void;
@@ -25,6 +27,7 @@ export default function ActiveSessionViewerEnhanced({
     mousePos,
     videoRef,
     canvasRef,
+    iceState = 'unknown',
     onToggleControl,
     onDisconnect,
     onCanvasClick,
@@ -85,6 +88,13 @@ export default function ActiveSessionViewerEnhanced({
 
     return (
         <div className="min-h-screen bg-black relative overflow-hidden">
+            {/* World Map Overlay */}
+            <div className="world-map-overlay bg-world-map"></div>
+            {/* Loading Overlay */}
+            {(iceState === 'new' || iceState === 'checking' || iceState === 'unknown') && (
+                <LoadingOverlay sessionId={sessionId} />
+            )}
+
             {/* Full-screen remote desktop feed */}
             <div className="absolute inset-0 flex items-center justify-center">
                 <div
@@ -92,33 +102,24 @@ export default function ActiveSessionViewerEnhanced({
                     onClick={handleClickWithRipple}
                     onMouseMove={onCanvasMouseMove}
                 >
-                    {/* Video element - visible for debugging */}
+                    {/* Video element is hidden - only used for canvas rendering */}
                     <video
                         ref={videoRef}
                         autoPlay
                         playsInline
                         muted
-                        style={{
-                            position: 'absolute',
-                            bottom: '100px',
-                            right: '20px',
-                            width: '300px',
-                            height: 'auto',
-                            border: '2px solid #9333EA',
-                            borderRadius: '8px',
-                            zIndex: 40,
-                            backgroundColor: '#000'
-                        }}
+                        style={{ display: 'none' }}
                     />
 
                     <canvas
                         ref={canvasRef}
                         width={1920}
                         height={1080}
-                        className="max-w-full max-h-full"
+                        className="w-full h-full object-contain"
                         style={{
                             transform: `scale(${zoom / 100})`,
-                            cursor: remoteControl ? (dragScrollMode ? 'grab' : 'none') : 'default'
+                            cursor: remoteControl ? (dragScrollMode ? 'grab' : 'none') : 'default',
+                            transition: 'transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)'
                         }}
                     />
 
@@ -172,6 +173,16 @@ export default function ActiveSessionViewerEnhanced({
                 <div className="bg-slate-900/60 backdrop-blur-2xl border-t border-slate-700/50 px-6 py-4">
                     <div className="max-w-7xl mx-auto flex items-center justify-between">
                         <div className="flex items-center gap-3">
+                            <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider border ${iceState === 'connected' || iceState === 'completed' ? 'bg-green-500/10 border-green-500/50 text-green-400' :
+                                iceState === 'failed' || iceState === 'disconnected' ? 'bg-red-500/10 border-red-500/50 text-red-400' :
+                                    'bg-amber-500/10 border-amber-500/50 text-amber-400 animate-pulse'
+                                }`}>
+                                <div className={`w-1.5 h-1.5 rounded-full ${iceState === 'connected' || iceState === 'completed' ? 'bg-green-500' :
+                                    iceState === 'failed' || iceState === 'disconnected' ? 'bg-red-500' : 'bg-amber-500'
+                                    }`} />
+                                ICE: {iceState}
+                            </div>
+
                             <button
                                 onClick={() => setIsPaused(!isPaused)}
                                 className="p-3 bg-slate-800/50 hover:bg-slate-700/50 rounded-xl transition-all duration-200 text-white hover:scale-110 transform"
@@ -183,8 +194,8 @@ export default function ActiveSessionViewerEnhanced({
                             <button
                                 onClick={onToggleControl}
                                 className={`px-4 py-3 rounded-xl transition-all duration-200 flex items-center gap-2 font-semibold hover:scale-105 transform ${remoteControl
-                                        ? 'bg-gradient-to-r from-purple-600 to-purple-700 text-white shadow-lg shadow-purple-500/30'
-                                        : 'bg-slate-800/50 hover:bg-slate-700/50 text-slate-300'
+                                    ? 'bg-gradient-to-r from-purple-600 to-purple-700 text-white shadow-lg shadow-purple-500/30'
+                                    : 'bg-slate-800/50 hover:bg-slate-700/50 text-slate-300'
                                     }`}
                             >
                                 <Hand className="w-5 h-5" />
@@ -207,6 +218,12 @@ export default function ActiveSessionViewerEnhanced({
                                 <ZoomOut className="w-5 h-5" />
                             </button>
                             <span className="text-white font-mono text-sm min-w-[4rem] text-center">{zoom}%</span>
+                            <button
+                                onClick={() => setZoom(100)}
+                                className="px-3 py-1.5 bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-400 rounded-lg text-[10px] font-black uppercase tracking-tighter transition-all"
+                            >
+                                Reset
+                            </button>
                             <button
                                 onClick={() => setZoom(Math.min(200, zoom + 10))}
                                 className="p-3 bg-slate-800/50 hover:bg-slate-700/50 rounded-xl transition-all duration-200 text-white hover:scale-110 transform"
@@ -251,8 +268,8 @@ export default function ActiveSessionViewerEnhanced({
                         <button
                             onClick={() => setDragScrollMode(!dragScrollMode)}
                             className={`px-4 py-3 rounded-xl transition-all duration-200 font-semibold flex items-center gap-2 hover:scale-110 transform ${dragScrollMode
-                                    ? 'bg-gradient-to-br from-green-600 to-green-700 text-white'
-                                    : 'bg-slate-800/50 text-slate-300 hover:bg-slate-700/50'
+                                ? 'bg-gradient-to-br from-green-600 to-green-700 text-white'
+                                : 'bg-slate-800/50 text-slate-300 hover:bg-slate-700/50'
                                 }`}
                         >
                             <Move className="w-4 h-4" />

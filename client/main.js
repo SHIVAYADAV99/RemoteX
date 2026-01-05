@@ -1,5 +1,6 @@
 const { app, BrowserWindow, ipcMain, desktopCapturer } = require('electron');
 const path = require('path');
+const os = require('os');
 
 // Development mode detection
 const isDev = process.env.NODE_ENV === 'development';
@@ -87,6 +88,19 @@ ipcMain.handle('get-sources', async () => {
     console.error('Error getting sources:', error);
     return [];
   }
+});
+
+ipcMain.handle('get-local-ips', async () => {
+  const interfaces = os.networkInterfaces();
+  const ips = [];
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        ips.push(iface.address);
+      }
+    }
+  }
+  return ips;
 });
 
 app.whenReady().then(() => {

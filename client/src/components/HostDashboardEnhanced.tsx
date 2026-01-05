@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Copy, Check, Eye, EyeOff, Users, X, Volume2, VolumeX, UserX, Pause, ChevronRight, ChevronLeft } from 'lucide-react';
+import { Copy, Check, Eye, EyeOff, Users, X, Volume2, VolumeX, UserX, Pause, ChevronRight, ChevronLeft, Monitor } from 'lucide-react';
 
 interface Viewer {
     id: string;
@@ -11,9 +11,10 @@ interface Viewer {
 interface HostDashboardEnhancedProps {
     isSharing: boolean;
     sessionId: string;
-    sessionPassword: string;
     viewerCount: number;
     videoRef: React.RefObject<HTMLVideoElement>;
+    hostIPs?: string[];
+    publicIP?: string;
     onStartShare: () => void;
     onStopShare: () => void;
     onBack: () => void;
@@ -22,16 +23,15 @@ interface HostDashboardEnhancedProps {
 export default function HostDashboardEnhanced({
     isSharing,
     sessionId,
-    sessionPassword,
     viewerCount,
     videoRef,
+    hostIPs = [],
+    publicIP = 'Fetching...',
     onStartShare,
     onStopShare,
     onBack
 }: HostDashboardEnhancedProps) {
     const [copiedCode, setCopiedCode] = useState(false);
-    const [copiedPassword, setCopiedPassword] = useState(false);
-    const [showPassword, setShowPassword] = useState(false);
     const [sidebarOpen, setSidebarOpen] = useState(true);
     const [isPaused, setIsPaused] = useState(false);
 
@@ -41,15 +41,10 @@ export default function HostDashboardEnhanced({
         { id: '2', name: 'Viewer #2', hasControl: false, isMuted: false },
     ]);
 
-    const copyToClipboard = (text: string, type: 'code' | 'password') => {
+    const copyToClipboard = (text: string) => {
         navigator.clipboard.writeText(text);
-        if (type === 'code') {
-            setCopiedCode(true);
-            setTimeout(() => setCopiedCode(false), 2000);
-        } else {
-            setCopiedPassword(true);
-            setTimeout(() => setCopiedPassword(false), 2000);
-        }
+        setCopiedCode(true);
+        setTimeout(() => setCopiedCode(false), 2000);
     };
 
     const toggleViewerControl = (viewerId: string) => {
@@ -70,26 +65,32 @@ export default function HostDashboardEnhanced({
 
     if (!isSharing) {
         return (
-            <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
+            <div className="min-h-screen bg-slate-950 text-slate-100 relative overflow-hidden flex items-center justify-center">
+                {/* World Map Overlay */}
+                <div className="world-map-overlay bg-world-map"></div>
+
+                {/* Ultra-premium mesh background */}
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,_rgba(67,56,202,0.1),_rgba(2,6,23,0.7))]"></div>
+                <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-[120px] animate-pulse"></div>
+
                 <button
                     onClick={onBack}
-                    className="absolute top-6 left-6 px-4 py-2 bg-slate-800/50 hover:bg-slate-700/50 rounded-xl transition-all duration-200 text-slate-300 hover:text-white backdrop-blur-xl"
+                    className="absolute top-6 left-6 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all duration-300 text-slate-300 hover:text-white backdrop-blur-xl z-10"
                 >
                     ← Back
                 </button>
+
                 <button
                     onClick={onStartShare}
-                    className="group relative overflow-hidden bg-gradient-to-br from-purple-600/20 to-purple-800/20 backdrop-blur-xl border-2 border-purple-500/30 rounded-3xl p-20 hover:border-purple-400/60 transition-all duration-500 shadow-2xl hover:shadow-purple-500/40 hover:scale-105"
+                    className="group relative overflow-hidden bg-slate-900/40 backdrop-blur-3xl border border-white/5 rounded-[3rem] p-24 hover:border-purple-500/30 transition-all duration-500 shadow-2xl hover:shadow-purple-500/20 hover:scale-105 transform"
                 >
-                    <div className="absolute inset-0 bg-gradient-to-br from-purple-500/0 to-purple-600/0 group-hover:from-purple-500/20 group-hover:to-purple-600/20 transition-all duration-500"></div>
+                    <div className="absolute inset-0 bg-gradient-to-br from-purple-500/0 to-purple-600/0 group-hover:from-purple-500/10 group-hover:to-purple-600/10 transition-all duration-500"></div>
                     <div className="relative text-center">
-                        <div className="w-32 h-32 bg-gradient-to-br from-purple-500 to-purple-600 rounded-full flex items-center justify-center mx-auto mb-8 group-hover:scale-110 transition-transform duration-300 shadow-lg shadow-purple-500/50 animate-pulse">
-                            <svg className="w-16 h-16 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                            </svg>
+                        <div className="w-32 h-32 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-[2rem] flex items-center justify-center mx-auto mb-10 group-hover:scale-110 transition-transform duration-300 shadow-xl shadow-indigo-500/40 group-hover:animate-glow-pulse">
+                            <Monitor className="w-16 h-16 text-white" />
                         </div>
-                        <h2 className="text-5xl font-black text-white mb-4">Start Screen Share</h2>
-                        <p className="text-xl text-purple-200">Click to begin hosting</p>
+                        <h2 className="text-6xl font-black text-white mb-4 tracking-tighter uppercase transition-all group-hover:tracking-tight">Host Now</h2>
+                        <p className="text-xl text-indigo-200 font-medium tracking-wide">Share your screen securely</p>
                     </div>
                 </button>
             </div>
@@ -181,9 +182,9 @@ export default function HostDashboardEnhanced({
             )}
 
             {/* Centered session info */}
-            <div className="relative z-10 flex items-center justify-center min-h-screen p-6">
-                <div className="max-w-2xl w-full">
-                    <div className="bg-slate-900/60 backdrop-blur-2xl border-2 border-purple-500/30 rounded-3xl p-12 shadow-2xl shadow-purple-500/20 mb-6">
+            <div className="relative z-10 flex items-center justify-center min-h-screen p-8">
+                <div className="max-w-2xl w-full animate-fade-in">
+                    <div className="bg-slate-900/40 backdrop-blur-3xl border border-white/5 rounded-[2.5rem] p-12 shadow-2xl shadow-indigo-500/10 group hover:border-indigo-500/20 transition-all duration-500 mb-8">
                         <div className="text-center mb-8">
                             <h2 className="text-3xl font-bold text-white mb-2">Session Active</h2>
                             <div className="flex items-center justify-center gap-2">
@@ -206,7 +207,7 @@ export default function HostDashboardEnhanced({
                                     </code>
                                 </div>
                                 <button
-                                    onClick={() => copyToClipboard(sessionId, 'code')}
+                                    onClick={() => copyToClipboard(sessionId)}
                                     className={`px-6 py-5 rounded-2xl transition-all duration-300 flex items-center gap-2 font-bold shadow-lg transform hover:scale-105 ${copiedCode ? 'bg-gradient-to-r from-green-600 to-green-700 text-white' : 'bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600 text-white'
                                         }`}
                                 >
@@ -215,29 +216,51 @@ export default function HostDashboardEnhanced({
                             </div>
                         </div>
 
-                        <div>
-                            <label className="block text-sm font-semibold text-slate-400 mb-2 uppercase tracking-wider">Password</label>
-                            <div className="flex items-center gap-3">
-                                <div className="flex-1 bg-slate-950/80 border border-slate-700/50 rounded-2xl px-6 py-5 flex items-center justify-between">
-                                    <code className="text-2xl font-mono font-bold text-white tracking-wider">
-                                        {showPassword ? sessionPassword : '••••••••'}
-                                    </code>
-                                    <button onClick={() => setShowPassword(!showPassword)} className="text-slate-400 hover:text-white transition-colors">
-                                        {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                                    </button>
+                        {/* Local Network Address (Recommended for Same WiFi) */}
+                        {hostIPs.length > 0 && (
+                            <div className="mb-4 p-5 bg-green-500/10 border border-green-500/30 rounded-2xl flex items-center justify-between group">
+                                <div>
+                                    <label className="block text-[10px] font-black text-green-400 mb-1 uppercase tracking-[0.2em]">Local Network (Same WiFi)</label>
+                                    <code className="text-sm font-mono text-white">http://{hostIPs[0]}:3001</code>
                                 </div>
                                 <button
-                                    onClick={() => copyToClipboard(sessionPassword, 'password')}
-                                    className={`px-6 py-5 rounded-2xl transition-all duration-300 flex items-center gap-2 font-bold shadow-lg transform hover:scale-105 ${copiedPassword ? 'bg-gradient-to-r from-green-600 to-green-700 text-white' : 'bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white'
-                                        }`}
+                                    onClick={() => copyToClipboard(`http://${hostIPs[0]}:3001`)}
+                                    className="text-xs text-green-400 hover:text-green-200 opacity-0 group-hover:opacity-100 transition-all font-bold"
                                 >
-                                    {copiedPassword ? <Check className="w-5 h-5" /> : <Copy className="w-5 h-5" />}
+                                    COPY
                                 </button>
                             </div>
+                        )}
+
+                        {/* Public Address (Real Remote) */}
+                        {publicIP && publicIP !== 'Fetching...' && (
+                            <div className="mb-6 p-5 bg-indigo-500/10 border border-indigo-500/30 rounded-2xl flex items-center justify-between group">
+                                <div>
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <label className="block text-[10px] font-black text-indigo-400 uppercase tracking-[0.2em]">Public Address (Remote)</label>
+                                        <span className="px-1.5 py-0.5 bg-indigo-900/50 text-indigo-300 text-[8px] rounded uppercase font-bold border border-indigo-500/20">Needs Port Forward 3001</span>
+                                    </div>
+                                    <code className="text-sm font-mono text-white">http://{publicIP}:3001</code>
+                                </div>
+                                <button
+                                    onClick={() => copyToClipboard(`http://${publicIP}:3001`)}
+                                    className="text-xs text-indigo-400 hover:text-indigo-200 opacity-0 group-hover:opacity-100 transition-all font-bold"
+                                >
+                                    COPY
+                                </button>
+                            </div>
+                        )}
+
+                        {/* Quick Tip for Tunnels */}
+                        <div className="p-4 bg-slate-950/40 rounded-xl border border-white/5 text-center">
+                            <p className="text-[10px] text-slate-500 uppercase font-bold mb-1">💡 Professional Tip</p>
+                            <p className="text-xs text-slate-400">
+                                Testing across different networks? Use <code className="text-purple-400">npx localtunnel --port 3001</code> for an instant public URL.
+                            </p>
                         </div>
 
                         <p className="text-sm text-slate-500 mt-6 text-center">
-                            Share both the code and password with viewers to connect
+                            Share this code with viewers to connect
                         </p>
                     </div>
 

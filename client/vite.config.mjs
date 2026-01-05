@@ -18,9 +18,17 @@ export default defineConfig({
         }
     },
     base: './',
+    define: {
+    },
     resolve: {
         alias: {
-            '@': path.resolve(__dirname, './src')
+            '@': path.resolve(__dirname, './src'),
+            'events': path.resolve(__dirname, 'src/libs/polyfills/events.js'),
+            'stream': path.resolve(__dirname, 'src/libs/polyfills/stream.js'),
+            'util': path.resolve(__dirname, 'src/libs/polyfills/util.js'),
+            'buffer': path.resolve(__dirname, 'src/libs/polyfills/buffer.js'),
+            'process': path.resolve(__dirname, 'src/libs/polyfills/process.js'),
+            'inherits': path.resolve(__dirname, 'src/libs/polyfills/inherits.js')
         }
     }
 })

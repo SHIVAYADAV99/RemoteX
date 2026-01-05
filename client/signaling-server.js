@@ -2,6 +2,7 @@ console.log('Starting signaling server script...');
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
+const os = require('os');
 
 const app = express();
 const server = http.createServer(app);
@@ -21,7 +22,7 @@ const io = new Server(server, {
   cors: { origin: "*", methods: ["GET", "POST"] }
 });
 
-const PORT = 3001; // Changed to 3001 to avoid EADDRINUSE
+const PORT = process.env.PORT || 3001;
 
 // Store active sessions and offers
 const sessions = {};
@@ -29,52 +30,66 @@ const sessions = {};
 io.on('connection', (socket) => {
   console.log(`[SIGNAL] Client connected: ${socket.id}`);
 
-  // Create a new session (Host)
-  socket.on('create-session', (data) => {
-    const { sessionId, password, offer } = data;
-    console.log(`[SIGNAL] 🎬 Creating session ${sessionId} for host ${socket.id}`);
+  // Create or Join a session/room
+  socket.on('join-room', (data) => {
+    // Handle both string (legacy) and object inputs
+    const roomId = typeof data === 'string' ? data : data.roomId;
+    const isHost = typeof data === 'object' ? data.isHost : false;
 
-    sessions[sessionId] = {
-      hostId: socket.id,
-      password: password,
-      offer: offer,
-      iceCandidates: []
-    };
+    console.log(`[SIGNAL] 👤 Socket ${socket.id} joining room: ${roomId} (Host: ${isHost})`);
+    socket.join(roomId);
 
-    socket.join(sessionId);
-    console.log(`[SIGNAL] ✅ Session ${sessionId} created successfully`);
+    if (!sessions[roomId]) {
+      console.log(`[SIGNAL] 🎬 Creating new session for host: ${socket.id}`);
+      sessions[roomId] = {
+        hostId: socket.id,
+        viewers: new Set()
+      };
+    } else {
+      if (isHost) {
+        console.log(`[SIGNAL] 🔄 Host re-connected/re-claiming room: ${roomId}`);
+        sessions[roomId].hostId = socket.id;
+        // Notify re-joining host of all current viewers
+        sessions[roomId].viewers.forEach(vId => {
+          socket.emit('user-connected', vId);
+        });
+      } else {
+        // It's a viewer
+        if (!sessions[roomId].viewers.has(socket.id)) {
+          console.log(`[SIGNAL] 👥 Viewer joining existing room: ${roomId}`);
+          sessions[roomId].viewers.add(socket.id);
+
+          // Notify Host ONLY with one event
+          if (sessions[roomId].hostId) {
+            console.log(`[SIGNAL] 📢 Notifying Host ${sessions[roomId].hostId} about new viewer`);
+            io.to(sessions[roomId].hostId).emit('user-connected', socket.id);
+          }
+        }
+      }
+    }
+
+    // Update viewer count for the room
+    const room = io.sockets.adapter.rooms.get(roomId);
+    const count = room ? room.size - 1 : 0;
+    io.to(roomId).emit('viewer-count', count);
   });
 
-  // Join a session (Client)
-  socket.on('join-session', (data) => {
-    const { sessionId } = data;
-    const session = sessions[sessionId];
+  // Generic Signal Relay for SimplePeer
+  socket.on('signal', (data) => {
+    const { to, signal } = data;
+    if (to) {
+      console.log(`[SIGNAL] 📡 Relay signal (${signal.type || 'ICE'}) from ${socket.id} to ${to}`);
+      io.to(to).emit('signal', { from: socket.id, signal });
+    }
+  });
 
-    if (session) {
-      console.log(`[SIGNAL] 👤 Client ${socket.id} joining session ${sessionId}`);
-      socket.join(sessionId);
-
-      // Send the stored offer to the new client
-      console.log(`[SIGNAL] 📤 Sending offer to client ${socket.id}`);
-      socket.emit('offer', {
-        sessionId: sessionId,
-        offer: session.offer
-      });
-
-      // Send any stored ICE candidates
-      console.log(`[SIGNAL] 🧊 Sending ${session.iceCandidates.length} ICE candidates to client`);
-      session.iceCandidates.forEach(candidate => {
-        socket.emit('ice-candidate', { candidate });
-      });
-
-      // Update viewer count
-      const viewers = io.sockets.adapter.rooms.get(sessionId);
-      const count = viewers ? viewers.size - 1 : 0; // -1 for host
-      io.to(sessionId).emit('viewer-count', count);
-      console.log(`[SIGNAL] 📊 Viewer count for ${sessionId}: ${count}`);
+  socket.on('offer', (data) => {
+    const { sessionId, offer, viewerId } = data;
+    console.log(`[SIGNAL] 📤 OFFER relay: from ${socket.id} to ${viewerId || 'room ' + sessionId}`);
+    if (viewerId) {
+      socket.to(viewerId).emit('offer', { sessionId, offer });
     } else {
-      console.error(`[SIGNAL] ❌ Session not found: ${sessionId}`);
-      socket.emit('error', 'Session not found');
+      socket.to(sessionId).emit('offer', { sessionId, offer });
     }
   });
 
@@ -82,64 +97,80 @@ io.on('connection', (socket) => {
     const { sessionId, answer } = data;
     const session = sessions[sessionId];
     if (session) {
-      console.log(`[SIGNAL] ✅ Broadcasting answer for session ${sessionId} to host ${session.hostId}`);
-      // Send answer to the host
+      console.log(`[SIGNAL] 📥 ANSWER relay: from ${socket.id} to host ${session.hostId}`);
       socket.to(session.hostId).emit('answer', { answer });
     } else {
-      console.error(`[SIGNAL] ❌ Session not found for answer: ${sessionId}`);
+      console.warn(`[SIGNAL] ⚠️ ANSWER received for unknown session ${sessionId}`);
     }
   });
 
   socket.on('ice-candidate', (data) => {
-    const { sessionId, candidate } = data;
-    const session = sessions[sessionId];
-    if (session) {
-      console.log(`[SIGNAL] 🧊 Relaying ICE candidate in ${sessionId}`);
-      // Store candidate if it's valid
-      if (candidate) {
-        session.iceCandidates.push(candidate);
-      }
-      // Broadcast to all other peers in the session
-      // WRAP the candidate in an object to match the client's expected { candidate } format
+    const { sessionId, candidate, targetId } = data;
+    // If targetId is specified, send only to them, otherwise broadcast
+    if (targetId) {
+      socket.to(targetId).emit('ice-candidate', { candidate });
+    } else {
       socket.to(sessionId).emit('ice-candidate', { candidate });
     }
   });
 
-  // Remote input relay (client -> host)
   socket.on('remote-input', (data) => {
-    const { sessionId, type, x, y, button, key, modifiers } = data;
+    const { sessionId, ...inputData } = data;
     const session = sessions[sessionId];
     if (session) {
-      console.log(`[SIGNAL] 🎮 Relaying remote input (${type}) in session ${sessionId}`);
-      // Send to host only
-      socket.to(session.hostId).emit('remote-input', { type, x, y, button, key, modifiers });
+      socket.to(session.hostId).emit('remote-input', inputData);
     }
   });
 
-  socket.on('disconnecting', () => {
-    socket.rooms.forEach(sessionId => {
-      const session = sessions[sessionId];
-      if (session) {
-        const viewers = io.sockets.adapter.rooms.get(sessionId);
-        const count = viewers ? viewers.size - 2 : 0;
-        socket.to(sessionId).emit('viewer-count', count < 0 ? 0 : count);
-      }
-    });
-  });
-
   socket.on('disconnect', () => {
-    console.log(`[SIGNAL] 🔌 Client disconnected: ${socket.id}`);
-    Object.keys(sessions).forEach(sessionId => {
-      if (sessions[sessionId].hostId === socket.id) {
-        delete sessions[sessionId];
-        console.log(`[SIGNAL] 🗑️ Session ${sessionId} closed (host disconnected)`);
-        socket.to(sessionId).emit('session-closed');
+    console.log(`[SIGNAL] Client disconnected: ${socket.id}`);
+    Object.keys(sessions).forEach(roomId => {
+      const session = sessions[roomId];
+      if (session.hostId === socket.id) {
+        // Only delete if the hostId hasn't been re-claimed by a new socket
+        console.log(`[SIGNAL] 🏁 Host ${socket.id} disconnected from room ${roomId}`);
+        delete sessions[roomId];
+        io.to(roomId).emit('session-closed');
+      } else if (session.viewers.has(socket.id)) {
+        console.log(`[SIGNAL] 👤 Viewer ${socket.id} left room ${roomId}`);
+        session.viewers.delete(socket.id);
+        const room = io.sockets.adapter.rooms.get(roomId);
+        const count = room ? room.size - 1 : 0;
+        io.to(roomId).emit('viewer-count', count);
       }
     });
   });
-
 });
 
-server.listen(PORT, () => {
-  console.log(`🚀 Signaling server running on http://localhost:${PORT}`);
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`\n❌ ERROR: Port ${PORT} is already in use!`);
+    console.error(`💡 Tip: Close any other instances of RemoteX or use 'netstat -ano | findstr :${PORT}' to find the process.\n`);
+  } else {
+    console.error(`\n❌ SERVER ERROR:`, err);
+  }
+});
+
+server.listen(PORT, '0.0.0.0', () => {
+  const interfaces = os.networkInterfaces();
+  console.log(`\n========================================`);
+  console.log(`🚀 RemoteX Signaling Server is ACTIVE`);
+  console.log(`========================================`);
+  console.log(`\n📡 Listening on:`);
+  console.log(`   - Local: http://127.0.0.1:${PORT}`);
+
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        console.log(`   - LAN:   http://${iface.address}:${PORT}`);
+      }
+    }
+  }
+
+  console.log(`\n🔒 Port Status: PORT ${PORT} OPEN`);
+  console.log(`\n[ANYDESK MODE] To use this over the internet:`);
+  console.log(`1. Forward Port ${PORT} in your router settings.`);
+  console.log(`2. OR use a tool like 'lt --port ${PORT}' for a public URL.`);
+  console.log(`\n========================================\n`);
+  console.log(`[LOGS] Waiting for connections...\n`);
 });

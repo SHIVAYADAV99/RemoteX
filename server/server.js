@@ -3,13 +3,13 @@ const https = require('https');
 const http = require('http');
 const { Server } = require('socket.io');
 const crypto = require('crypto');
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
 const fs = require('fs');
 const path = require('path');
 
 const app = express();
 app.use(express.json());
-app.use(express.static('public'));
+
 
 // Use HTTP for development, HTTPS for production
 const USE_HTTPS = process.env.NODE_ENV === 'production';
@@ -28,7 +28,8 @@ if (USE_HTTPS && fs.existsSync('server-cert.pem')) {
 const io = new Server(server, {
   cors: {
     origin: "*",
-    methods: ["GET", "POST"]
+    methods: ["GET", "POST"],
+    credentials: true
   }
 });
 
@@ -43,7 +44,7 @@ const PASSWORD_MIN_LENGTH = 8;
 
 // Generate secure session ID
 function generateSessionId() {
-  return crypto.randomBytes(8).toString('hex').toUpperCase();
+  return crypto.randomBytes(4).toString('hex').toUpperCase();
 }
 
 // Generate secure password
@@ -75,7 +76,7 @@ class SecurityLogger {
       ...data
     };
     console.log(`[SECURITY] ${event}:`, data);
-    
+
     // In production, write to file or database
     if (process.env.NODE_ENV === 'production') {
       fs.appendFileSync('security.log', JSON.stringify(logEntry) + '\n');
@@ -92,7 +93,7 @@ function cleanupSessions() {
     if (now - session.created > SESSION_TIMEOUT) {
       logger.log('session-expired', { sessionId });
       sessions.delete(sessionId);
-      
+
       // Notify all participants
       if (session.host) {
         io.to(session.host).emit('session-expired');
@@ -166,14 +167,14 @@ io.on('connection', (socket) => {
       console.error('[COMPAT] signal error:', e);
     }
   });
-  
+
   // Create new session (Host)
   socket.on('create-session', async (callback) => {
     try {
       const sessionId = generateSessionId();
       const password = generatePassword();
       const passwordHash = await hashPassword(password);
-      
+
       const session = {
         id: sessionId,
         host: socket.id,
@@ -186,156 +187,156 @@ io.on('connection', (socket) => {
           controlKeyboard: true
         }
       };
-      
+
       sessions.set(sessionId, session);
       connections.set(socket.id, { role: 'host', sessionId });
-      
-      logger.log('session-created', { 
-        sessionId, 
-        hostId: socket.id 
+
+      logger.log('session-created', {
+        sessionId,
+        hostId: socket.id
       });
-      
-      callback({ 
-        success: true, 
-        sessionId, 
-        password 
+
+      callback({
+        success: true,
+        sessionId,
+        password
       });
-      
+
     } catch (error) {
       logger.log('session-creation-failed', { error: error.message });
       callback({ success: false, error: error.message });
     }
   });
-  
+
   // Join existing session (Client)
   socket.on('join-session', async ({ sessionId, password }, callback) => {
     try {
       const session = sessions.get(sessionId);
-      
+
       if (!session) {
         logger.log('join-failed-not-found', { sessionId, clientId: socket.id });
         return callback({ success: false, error: 'Session not found' });
       }
-      
+
       // Verify password
       const passwordValid = await verifyPassword(password, session.passwordHash);
       if (!passwordValid) {
         logger.log('join-failed-invalid-password', { sessionId, clientId: socket.id });
         return callback({ success: false, error: 'Invalid password' });
       }
-      
+
       // Check client limit
       if (session.clients.length >= MAX_CLIENTS_PER_SESSION) {
         logger.log('join-failed-full', { sessionId, clientId: socket.id });
         return callback({ success: false, error: 'Session is full' });
       }
-      
+
       // Add client to session
       session.clients.push(socket.id);
       connections.set(socket.id, { role: 'client', sessionId });
-      
-      logger.log('client-joined', { 
-        sessionId, 
+
+      logger.log('client-joined', {
+        sessionId,
         clientId: socket.id,
-        totalClients: session.clients.length 
+        totalClients: session.clients.length
       });
-      
+
       // Notify host
-      io.to(session.host).emit('client-joined', { 
+      io.to(session.host).emit('client-joined', {
         clientId: socket.id,
-        totalClients: session.clients.length 
+        totalClients: session.clients.length
       });
-      
-      callback({ 
+
+      callback({
         success: true,
         permissions: session.permissions
       });
-      
+
     } catch (error) {
       logger.log('join-error', { error: error.message });
       callback({ success: false, error: error.message });
     }
   });
-  
+
   // WebRTC Signaling - Offer (from Host to Client)
   socket.on('webrtc-offer', ({ targetId, offer }) => {
     const conn = connections.get(socket.id);
     if (!conn || conn.role !== 'host') {
       return socket.emit('error', { message: 'Unauthorized' });
     }
-    
-    logger.log('webrtc-offer', { 
-      from: socket.id, 
-      to: targetId 
+
+    logger.log('webrtc-offer', {
+      from: socket.id,
+      to: targetId
     });
-    
-    io.to(targetId).emit('webrtc-offer', { 
-      fromId: socket.id, 
-      offer 
+
+    io.to(targetId).emit('webrtc-offer', {
+      fromId: socket.id,
+      offer
     });
   });
-  
+
   // WebRTC Signaling - Answer (from Client to Host)
   socket.on('webrtc-answer', ({ targetId, answer }) => {
     const conn = connections.get(socket.id);
     if (!conn || conn.role !== 'client') {
       return socket.emit('error', { message: 'Unauthorized' });
     }
-    
-    logger.log('webrtc-answer', { 
-      from: socket.id, 
-      to: targetId 
+
+    logger.log('webrtc-answer', {
+      from: socket.id,
+      to: targetId
     });
-    
-    io.to(targetId).emit('webrtc-answer', { 
-      fromId: socket.id, 
-      answer 
+
+    io.to(targetId).emit('webrtc-answer', {
+      fromId: socket.id,
+      answer
     });
   });
-  
+
   // WebRTC Signaling - ICE Candidate
   socket.on('ice-candidate', ({ targetId, candidate }) => {
-    io.to(targetId).emit('ice-candidate', { 
-      fromId: socket.id, 
-      candidate 
+    io.to(targetId).emit('ice-candidate', {
+      fromId: socket.id,
+      candidate
     });
   });
-  
+
   // Update permissions (Host only)
   socket.on('update-permissions', ({ permissions }, callback) => {
     const conn = connections.get(socket.id);
     if (!conn || conn.role !== 'host') {
       return callback({ success: false, error: 'Unauthorized' });
     }
-    
+
     const session = sessions.get(conn.sessionId);
     if (session) {
       session.permissions = { ...session.permissions, ...permissions };
-      
-      logger.log('permissions-updated', { 
-        sessionId: conn.sessionId, 
-        permissions 
+
+      logger.log('permissions-updated', {
+        sessionId: conn.sessionId,
+        permissions
       });
-      
+
       // Notify all clients
       session.clients.forEach(clientId => {
         io.to(clientId).emit('permissions-updated', session.permissions);
       });
-      
+
       callback({ success: true });
     }
   });
-  
+
   // Remote control command
   socket.on('remote-control', ({ command }) => {
     const conn = connections.get(socket.id);
     if (!conn || conn.role !== 'client') {
       return socket.emit('error', { message: 'Unauthorized' });
     }
-    
+
     const session = sessions.get(conn.sessionId);
     if (!session) return;
-    
+
     // Check permissions
     if (command.type === 'mouse' && !session.permissions.controlMouse) {
       return socket.emit('error', { message: 'Mouse control not permitted' });
@@ -343,53 +344,53 @@ io.on('connection', (socket) => {
     if (command.type === 'keyboard' && !session.permissions.controlKeyboard) {
       return socket.emit('error', { message: 'Keyboard control not permitted' });
     }
-    
+
     // Forward to host
-    io.to(session.host).emit('remote-control', { 
-      fromId: socket.id, 
-      command 
+    io.to(session.host).emit('remote-control', {
+      fromId: socket.id,
+      command
     });
   });
-  
+
   // Disconnect handling
   socket.on('disconnect', () => {
     console.log(`❌ Client disconnected: ${socket.id}`);
-    
+
     const conn = connections.get(socket.id);
     if (!conn) return;
-    
+
     const session = sessions.get(conn.sessionId);
     if (!session) return;
-    
+
     if (conn.role === 'host') {
       // Host disconnected - end session
-      logger.log('host-disconnected', { 
-        sessionId: conn.sessionId 
+      logger.log('host-disconnected', {
+        sessionId: conn.sessionId
       });
-      
+
       session.clients.forEach(clientId => {
         io.to(clientId).emit('host-disconnected');
       });
-      
+
       sessions.delete(conn.sessionId);
-      
+
     } else if (conn.role === 'client') {
       // Client disconnected
       session.clients = session.clients.filter(id => id !== socket.id);
-      
-      logger.log('client-disconnected', { 
+
+      logger.log('client-disconnected', {
         sessionId: conn.sessionId,
         clientId: socket.id,
-        remainingClients: session.clients.length 
+        remainingClients: session.clients.length
       });
-      
+
       // Notify host
-      io.to(session.host).emit('client-disconnected', { 
+      io.to(session.host).emit('client-disconnected', {
         clientId: socket.id,
-        totalClients: session.clients.length 
+        totalClients: session.clients.length
       });
     }
-    
+
     connections.delete(socket.id);
   });
 
@@ -420,7 +421,7 @@ io.on('connection', (socket) => {
 
 // REST API endpoints
 app.get('/health', (req, res) => {
-  res.json({ 
+  res.json({
     status: 'ok',
     activeSessions: sessions.size,
     uptime: process.uptime()
@@ -432,7 +433,7 @@ app.get('/api/session/:id/status', (req, res) => {
   if (!session) {
     return res.status(404).json({ error: 'Session not found' });
   }
-  
+
   res.json({
     sessionId: session.id,
     active: true,
@@ -441,14 +442,51 @@ app.get('/api/session/:id/status', (req, res) => {
   });
 });
 
-// Start server
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
+// Serve client files - moved to bottom to avoid blocking API
+// Serve client files - moved to bottom to avoid blocking API
+const clientDistPath = path.join(__dirname, '../client/dist');
+console.log(`[DEBUG] Serving static files from: ${clientDistPath}`);
+if (fs.existsSync(clientDistPath)) {
+  console.log('[DEBUG] Client dist directory exists');
+  if (fs.existsSync(path.join(clientDistPath, 'index.html'))) {
+    console.log('[DEBUG] index.html found');
+  } else {
+    console.error('[DEBUG] index.html NOT found in dist');
+  }
+} else {
+  console.error('[DEBUG] Client dist directory NOT found');
+}
+
+app.use(express.static(clientDistPath));
+
+app.get('*', (req, res) => {
+  if (req.path.startsWith('/api') || req.path === '/health') return res.status(404).json({ error: 'Not found' });
+
+  const indexPath = path.join(clientDistPath, 'index.html');
+  res.sendFile(indexPath, (err) => {
+    if (err) {
+      console.error(`[ERROR] Failed to send index.html from ${indexPath}:`, err);
+      res.status(500).send(`Error loading client: ${err.message}. Path resolved to: ${indexPath}`);
+    }
+  });
+});
+const PORT = process.env.PORT || 3001;
+const listener = server.listen(PORT, '0.0.0.0', () => {
+  const msg = `Server running on port ${PORT}`;
   console.log('\n🚀 Remote Desktop Signaling Server');
-  console.log(`📡 Server running on port ${PORT}`);
+  console.log(`📡 ${msg}`);
   console.log(`🔒 Security: ${USE_HTTPS ? 'HTTPS' : 'HTTP (dev only)'}`);
   console.log(`\n📋 Connect clients to: ${USE_HTTPS ? 'wss' : 'ws'}://localhost:${PORT}`);
   console.log('\n✅ Server ready!\n');
+});
+
+listener.on('error', (err) => {
+  const errMsg = `Server startup failed: ${err.message}`;
+  console.error(errMsg);
+  if (err.code === 'EADDRINUSE') {
+    const portMsg = `❌ Port ${PORT} is already in use by another process.`;
+    console.error(portMsg);
+  }
 });
 
 // Graceful shutdown

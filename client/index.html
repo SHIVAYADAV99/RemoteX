@@ -1,13 +1,18 @@
 <!DOCTYPE html>
 <html>
+
 <head>
     <meta charset="UTF-8">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline' http://localhost:5173 https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net; img-src 'self' data: blob: http://localhost:5173 https://cdn.jsdelivr.net; connect-src 'self' ws://localhost:3000 http://localhost:3000 http://localhost:5173 ws://localhost:5173 wss://localhost:3000 http://127.0.0.1:3001 ws://127.0.0.1:3001 http://localhost:3001 ws://localhost:3001 ws://0.0.0.0:3001; media-src 'self' blob: mediastream:; object-src 'none'; base-uri 'self'; form-action 'self'; worker-src 'self' blob:;">
+    <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self' 'unsafe-inline' 'unsafe-eval' * data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' *; style-src 'self' 'unsafe-inline' *; font-src 'self' data: *; img-src 'self' data: blob: *; connect-src 'self' ws: wss: *; media-src 'self' blob: mediastream: *; object-src 'none'; base-uri 'self'; form-action 'self'; worker-src 'self' blob:;">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>RemoteX - Remote Desktop Platform</title>
+    <title>RemoteX - Remote Desktop Platform</title>
 </head>
+
 <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
 </body>
+
 </html>

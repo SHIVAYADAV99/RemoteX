@@ -1,224 +1,116 @@
 import React, { useState, useRef, useEffect } from 'react';
-import io, { Socket } from 'socket.io-client';
+import { Monitor, Share2, Hand, MousePointer, Keyboard, Video, VideoOff, Users, Copy, Check, Wifi, Globe, MapPin, Activity, Zap, Shield, ArrowLeft, Settings, Maximize2 } from 'lucide-react';
+import { io, Socket } from 'socket.io-client';
+import SimplePeer from 'simple-peer';
 import WelcomeScreen from './components/WelcomeScreen';
 import Dashboard from './components/Dashboard';
-import HostDashboardEnhanced from './components/HostDashboardEnhanced';
-import JoinSessionScreen from './components/JoinSessionScreen';
-import ActiveSessionViewerEnhanced from './components/ActiveSessionViewerEnhanced';
 
-// TypeScript declaration for Electron IPC
-declare global {
-  interface Window {
-    electron?: {
-      getSources: () => Promise<any[]>;
-      sendMouseMove: (pos: { x: number; y: number }) => Promise<{ success: boolean; error?: string }>;
-      sendMouseClick: (pos: { x: number; y: number; button?: string }) => Promise<{ success: boolean; error?: string }>;
-      sendKey: (data: { key: string; modifiers?: string[] }) => Promise<{ success: boolean; error?: string }>;
-    };
-  }
-}
+// Mock connection data for the global map
+const mockConnections = [
+  { id: 1, from: { lat: 40.7128, lng: -74.0060, city: 'New York' }, to: { lat: 51.5074, lng: -0.1278, city: 'London' } },
+  { id: 2, from: { lat: 40.7128, lng: -74.0060, city: 'New York' }, to: { lat: 35.6762, lng: 139.6503, city: 'Tokyo' } },
+];
 
 export default function RemoteXApp() {
-  const [mode, setMode] = useState('dashboard'); // 'dashboard' | 'home' | 'host' | 'join' | 'viewer'
+  const [mode, setMode] = useState('home');
+  const [isTransitioning, setIsTransitioning] = useState(false);
+
+  const handleModeChange = (newMode: string) => {
+    setIsTransitioning(true);
+    setTimeout(() => {
+      setMode(newMode);
+      setIsTransitioning(false);
+    }, 400); // Transition duration
+  };
+
   const [isSharing, setIsSharing] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
   const [sessionId, setSessionId] = useState('');
-  const [sessionPassword, setSessionPassword] = useState('');
   const [inputSessionId, setInputSessionId] = useState('');
-  const [inputPassword, setInputPassword] = useState('');
   const [remoteControl, setRemoteControl] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+  const [logs, setLogs] = useState<string[]>([]);
   const [viewerCount, setViewerCount] = useState(0);
-  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+  const [showGlobalMap, setShowGlobalMap] = useState(false);
 
+  // OS Detection
+  const [osName, setOsName] = useState('Unknown OS');
 
-  const socketRef = useRef<Socket | null>(null);
-  const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-
+  // Use refs for mode and sessionId for socket listeners
   const modeRef = useRef(mode);
+  const sessionIdRef = useRef(sessionId);
+
   useEffect(() => {
     modeRef.current = mode;
   }, [mode]);
 
   useEffect(() => {
-    // Initialize socket connection ONCE
-    if (!socketRef.current) {
-      console.log('📡 Initializing persistent socket connection...');
-      socketRef.current = io('http://127.0.0.1:3001', {
-        transports: ['polling', 'websocket'],
-        reconnection: true,
-        reconnectionAttempts: 10
-      });
+    sessionIdRef.current = sessionId;
+  }, [sessionId]);
 
-      socketRef.current.on('connect', () => {
-        console.log('✅ Connected to signaling server');
-      });
+  useEffect(() => {
+    if (navigator.userAgent.indexOf('Win') !== -1) setOsName('Windows');
+    else if (navigator.userAgent.indexOf('Mac') !== -1) setOsName('MacOS');
+    else if (navigator.userAgent.indexOf('Linux') !== -1) setOsName('Linux');
+    else if (navigator.userAgent.indexOf('Android') !== -1) setOsName('Android');
+    else if (navigator.userAgent.indexOf('like Mac') !== -1) setOsName('iOS');
+  }, []);
 
-      socketRef.current.on('disconnect', () => {
-        console.log('❌ Disconnected from signaling server');
-      });
+  // Timeout state for connection failure
+  const [connectionTimedOut, setConnectionTimedOut] = useState(false);
+  const [networkQuality, setNetworkQuality] = useState('good');
 
-      // WebRTC signaling handlers - persistently active
-      socketRef.current.on('offer', async (data: { sessionId: string; offer: RTCSessionDescriptionInit }) => {
-        console.log('📨 Received offer from server for session:', data.sessionId);
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    if (mode === 'client' && !isConnected) {
+      timer = setTimeout(() => {
+        setConnectionTimedOut(true);
+      }, 10000); // 10 seconds timeout
+    }
+    return () => clearTimeout(timer);
+  }, [mode, isConnected]);
 
-        // Ensure peer connection exists if we're joining
-        if (!peerConnectionRef.current) {
-          console.log('🔄 Creating PeerConnection on demand for incoming offer');
-          createPeerConnection(data.sessionId);
-        }
-
-        if (peerConnectionRef.current && socketRef.current) {
-          try {
-            console.log('🔄 Setting remote description (offer)');
-            await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(data.offer));
-
-            console.log('📝 Creating answer');
-            const answer = await peerConnectionRef.current.createAnswer();
-
-            console.log('🔄 Setting local description (answer)');
-            await peerConnectionRef.current.setLocalDescription(answer);
-
-            console.log('📤 Sending answer to server');
-            socketRef.current.emit('answer', {
-              sessionId: data.sessionId,
-              answer: answer
-            });
-          } catch (err) {
-            console.error('❌ Error handling offer:', err);
-          }
-        }
-      });
-
-      socketRef.current.on('answer', async (data: { answer: RTCSessionDescriptionInit }) => {
-        console.log('📨 Received answer from server');
-        if (peerConnectionRef.current) {
-          try {
-            console.log('🔄 Setting remote description (answer)');
-            await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(data.answer));
-            console.log('✅ Answer set successfully');
-          } catch (err) {
-            console.error('❌ Error setting answer:', err);
-          }
-        }
-      });
-
-      socketRef.current.on('ice-candidate', async (data: { candidate: RTCIceCandidateInit }) => {
-        if (data.candidate && peerConnectionRef.current) {
-          console.log('🧊 Received ICE candidate');
-          try {
-            await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(data.candidate));
-            console.log('✅ ICE candidate added');
-          } catch (err) {
-            console.error('❌ Error adding ICE candidate:', err);
-          }
-        } else if (!data.candidate) {
-          console.log('🧊 Received end-of-candidates signal');
-        }
-      });
-
-
-      // Remote input handler for HOST
-      socketRef.current.on('remote-input', async (data: { type: string; x?: number; y?: number; button?: string; key?: string; modifiers?: string[] }) => {
-        // Use modeRef to ensure we have the latest mode
-        if (modeRef.current === 'host' && window.electron) {
-          try {
-            if (data.type === 'mousemove' && data.x !== undefined && data.y !== undefined) {
-              await window.electron.sendMouseMove({ x: data.x, y: data.y });
-            } else if (data.type === 'mouseclick' && data.x !== undefined && data.y !== undefined) {
-              await window.electron.sendMouseClick({ x: data.x, y: data.y, button: data.button });
-            } else if (data.type === 'keypress' && data.key) {
-              await window.electron.sendKey({ key: data.key, modifiers: data.modifiers });
-            }
-          } catch (err) {
-            console.error('Remote input error:', err);
-          }
-        }
-      });
-
-      // Viewer count updates
-      socketRef.current.on('viewer-count', (count: number) => {
-        setViewerCount(count);
-      });
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const socketRef = useRef<Socket | null>(null);
+  const peerRef = useRef<any>(null); // SimplePeer instance
+  const [socketConnected, setSocketConnected] = useState(false);
+  const getInitialSignalUrl = () => {
+    // If served from the server (http/https), let Socket.io determine the URL (same origin)
+    if (window.location.protocol !== 'file:') {
+      return window.location.origin;
     }
 
-    return () => {
-      // Don't disconnect!
-    };
-  }, []); // Persistent
+    // Fallback for file:// protocol (local testing without server hosting)
+    return 'http://127.0.0.1:3001';
+  };
 
-  const createPeerConnection = (targetSessionId: string) => {
-    console.log('🛠️ Creating PeerConnection...');
-    peerConnectionRef.current = new RTCPeerConnection({
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' }
-      ]
-    });
+  const [signalServerUrl, setSignalServerUrl] = useState(getInitialSignalUrl());
 
-    peerConnectionRef.current.onicecandidate = (event: RTCPeerConnectionIceEvent) => {
-      if (event.candidate && socketRef.current) {
-        console.log('🧊 Sending ICE candidate to server');
-        socketRef.current.emit('ice-candidate', {
-          sessionId: targetSessionId,
-          candidate: event.candidate
-        });
-      }
-    };
+  const cleanupPeer = () => {
+    if (peerRef.current) {
+      console.log('🧹 Cleaning up existing peer instance');
+      peerRef.current.destroy();
+      peerRef.current = null;
+    }
+  };
 
-    peerConnectionRef.current.ontrack = (event: RTCTrackEvent) => {
-      console.log('📹 Received remote track:', event.track.kind);
-
-      const video = videoRef.current;
-      if (!video) {
-        console.log('⚠️ Video element not available yet');
-        return;
-      }
-
-      // Assign stream
-      if (event.streams && event.streams[0]) {
-        console.log('✅ Attaching stream to video element');
-        setRemoteStream(event.streams[0]);
-        if (video) video.srcObject = event.streams[0];
-      } else {
-        console.log('⚠️ Creating new stream from track');
-        const inboundStream = new MediaStream();
-        inboundStream.addTrack(event.track);
-        setRemoteStream(inboundStream);
-        if (video) video.srcObject = inboundStream;
-      }
-
-      video.play().catch(e => console.error('❌ Video play error:', e));
-    };
-
-    return peerConnectionRef.current;
+  const addLog = (message: string) => {
+    setLogs(prev => [...prev, `${new Date().toLocaleTimeString()}: ${message}`]);
   };
 
   const generateSessionId = () => {
     return Math.random().toString(36).substring(2, 10).toUpperCase();
   };
 
-  const generatePassword = () => {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    let password = '';
-    for (let i = 0; i < 8; i++) {
-      password += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return password;
-  };
-
   const startScreenShare = async () => {
     try {
-      const newSessionId = generateSessionId();
-      const newPassword = generatePassword();
-      setSessionId(newSessionId);
-      setSessionPassword(newPassword);
-      setIsSharing(true);
-
       const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: true,
+        video: {
+          displaySurface: 'monitor' as DisplayCaptureSurfaceType
+        } as MediaTrackConstraints,
         audio: false
       });
 
@@ -228,49 +120,23 @@ export default function RemoteXApp() {
         videoRef.current.srcObject = stream;
       }
 
-      peerConnectionRef.current = new RTCPeerConnection({
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' }
-        ]
-      });
+      setIsSharing(true);
+      const newSessionId = generateSessionId();
+      setSessionId(newSessionId);
+      addLog(`Screen sharing started. Session ID: ${newSessionId}`);
 
-      if (peerConnectionRef.current) {
-        stream.getTracks().forEach(track => {
-          peerConnectionRef.current!.addTrack(track, stream);
-        });
-      }
-
-      peerConnectionRef.current.onicecandidate = (event: RTCPeerConnectionIceEvent) => {
-        if (event.candidate && socketRef.current) {
-          socketRef.current.emit('ice-candidate', {
-            sessionId: newSessionId,
-            candidate: event.candidate
-          });
-        }
-      };
-
-      if (peerConnectionRef.current && socketRef.current && socketRef.current.connected) {
-        const offer = await peerConnectionRef.current.createOffer();
-        await peerConnectionRef.current.setLocalDescription(offer);
-
-        socketRef.current.emit('create-session', {
-          sessionId: newSessionId,
-          password: newPassword,
-          offer: offer
-        });
+      // Create host room on signaling server
+      if (socketRef.current) {
+        socketRef.current.emit('join-room', { roomId: newSessionId, isHost: true });
+        addLog(`Room created on server: ${newSessionId}`);
       }
 
       stream.getVideoTracks()[0].addEventListener('ended', () => {
         stopScreenShare();
       });
 
-    } catch (err) {
-      console.error('Screen share error:', err);
-      alert(`Failed to start screen share: ${err}`);
-      setIsSharing(false);
-      setSessionId('');
-      setSessionPassword('');
+    } catch (err: any) {
+      addLog(`Error starting screen share: ${err.message}`);
     }
   };
 
@@ -279,182 +145,445 @@ export default function RemoteXApp() {
       streamRef.current.getTracks().forEach(track => track.stop());
       streamRef.current = null;
     }
-    if (peerConnectionRef.current) {
-      peerConnectionRef.current.close();
-      peerConnectionRef.current = null;
-    }
+    cleanupPeer();
     setIsSharing(false);
-    setMode('dashboard');
+    setIsConnected(false);
+    setViewerCount(0);
+    addLog('Screen sharing stopped');
   };
 
-  const connectToSession = async () => {
-    if (inputSessionId.length >= 6 && inputPassword.length >= 4) {
-      console.log('📡 Starting connection to session:', inputSessionId);
-      setSessionId(inputSessionId);
-
-      // Create peer connection using the shared helper
-      createPeerConnection(inputSessionId);
-
-      if (socketRef.current) {
-        console.log('📡 Emitting join-session event');
-        socketRef.current.emit('join-session', {
-          sessionId: inputSessionId,
-          password: inputPassword
-        });
-        setMode('viewer');
-      }
+  const connectToSession = () => {
+    if (inputSessionId.length >= 6 && socketRef.current) {
+      proceedConnection();
     }
   };
 
+  const proceedConnection = () => {
+    if (inputSessionId.length >= 6 && socketRef.current) {
+      setSessionId(inputSessionId);
+      addLog(`Joining session: ${inputSessionId}`);
+      socketRef.current.emit('join-room', { roomId: inputSessionId, isHost: false });
+      console.log('🔗 Client joining room:', inputSessionId);
+      setMode('client');
+    }
+  };
+
+  const lastInitRef = useRef<number>(0);
+
+  const initPeer = (userId: string, socket: Socket) => {
+    const now = Date.now();
+    if (now - lastInitRef.current < 1000) {
+      console.log('⚠️ Skipping rapid peer initialization (guard)');
+      return;
+    }
+    lastInitRef.current = now;
+
+    console.log('👤 Initiating Peer connection to:', userId);
+    addLog(`Initiating connection to ${userId}`);
+
+    cleanupPeer();
+
+    if (streamRef.current) {
+      console.log('🔍 Diagnostic: SimplePeer type:', typeof SimplePeer);
+      console.log('🔍 Diagnostic: global.Buffer:', !!(window as any).Buffer);
+      console.log('🔍 Diagnostic: global.EventEmitter:', !!(window as any).EventEmitter);
+      console.log('🔍 Diagnostic: global.process:', !!(window as any).process);
+      console.log('🔍 Diagnostic: global.stream:', !!(window as any).stream);
+      console.log('🔍 Diagnostic: global.util:', !!(window as any).util);
+      console.log('🔍 Diagnostic: Stream state:', streamRef.current.active ? 'Active' : 'Inactive');
+      console.log('🔍 Diagnostic: Stream tracks:', streamRef.current.getTracks().length);
+
+      try {
+        const peer = new SimplePeer({
+          initiator: true,
+          stream: streamRef.current,
+          trickle: true
+        }) as any;
+
+        console.log('📡 Peer connection: ICE Gathering started');
+
+        peer.on('signal', (signal: any) => {
+          console.log(`📡 Peer signaling: Sending ${signal.type || 'ICE'} to ${userId}`);
+          socket.emit('signal', { to: userId, signal });
+        });
+
+        peer.on('connect', () => {
+          console.log('🤝 WebRTC Connected!');
+          addLog(`Successfully connected to ${userId}`);
+        });
+
+        peer.on('error', (err: Error) => {
+          console.error('Peer error:', err);
+          addLog(`Peer error: ${err.message}`);
+        });
+
+        peerRef.current = peer;
+        setViewerCount(1);
+      } catch (err: any) {
+        console.error('❌ CRITICAL: SimplePeer constructor failed:', err);
+        addLog(`Connection failed: ${err.message}`);
+      }
+    } else {
+      console.log('⚠️ No stream found when initializing peer');
+    }
+  };
+
+  // Socket.IO and WebRTC Setup
+  useEffect(() => {
+    console.log('🔌 Initializing Socket.IO connection to:', signalServerUrl);
+    const socket = io(signalServerUrl, {
+      transports: ['websocket'], // Force WebSocket to avoid XHR polling issues with file://
+      reconnectionAttempts: 5
+    });
+
+    socket.on('connect', () => {
+      console.log('✅ Connected to signaling server');
+      setSocketConnected(true);
+      addLog('Connected to signaling server');
+
+      // Auto-rejoin if we have a session active
+      if (sessionIdRef.current && (modeRef.current === 'host' || modeRef.current === 'client')) {
+        console.log(`🔄 Auto-rejoining session: ${sessionIdRef.current}`);
+        socket.emit('join-room', {
+          roomId: sessionIdRef.current,
+          isHost: modeRef.current === 'host'
+        });
+      }
+    });
+
+    socket.on('disconnect', () => {
+      console.log('❌ Disconnected from signaling server');
+      setSocketConnected(false);
+      addLog('Disconnected from signaling server');
+    });
+
+    socket.on('connect_error', (error: Error) => {
+      console.error('Connection error:', error);
+      addLog(`Connection error: ${error.message}`);
+    });
+
+    // Handle viewer joining (when you're the host)
+    socket.on('user-connected', (userId: string) => {
+      if (modeRef.current === 'host') {
+        initPeer(userId, socket);
+      }
+    });
+
+    // Handle signaling for WebRTC
+    socket.on('signal', ({ from, signal }: { from: string; signal: any }) => {
+      console.log(`📡 Received signal (${signal.type || 'ICE'}) from ${from}`);
+
+      if (!peerRef.current && modeRef.current === 'client') {
+        setConnectionTimedOut(false); // Reset timeout if we get a signal
+        const peer = new SimplePeer({
+          initiator: false,
+          trickle: true
+        }) as any;
+
+        peer.on('signal', (responseSignal: any) => {
+          console.log(`📡 Peer signaling: Sending ${responseSignal.type || 'ICE'} response to ${from}`);
+          socket.emit('signal', { to: from, signal: responseSignal });
+        });
+
+        peer.on('connect', () => {
+          console.log('🤝 WebRTC Connected (Client)!');
+          setIsConnected(true);
+        });
+
+        peer.on('stream', (remoteStream: MediaStream) => {
+          console.log('🎬 Received remote stream!');
+          addLog('Remote stream received');
+
+          if (videoRef.current) {
+            videoRef.current.srcObject = remoteStream;
+            videoRef.current.play().catch(e => console.error('Play error:', e));
+          }
+          setIsConnected(true);
+        });
+
+        peer.on('error', (err: Error) => {
+          console.error('Peer error:', err);
+          addLog(`Peer error: ${err.message}`);
+        });
+
+        peer.signal(signal);
+        peerRef.current = peer;
+      } else if (peerRef.current) {
+        (peerRef.current as any).signal(signal);
+      }
+    });
+
+    socketRef.current = socket;
+
+    return () => {
+      cleanupPeer();
+      socket.disconnect();
+    };
+  }, [signalServerUrl]);
+
+  const handleCanvasClick = (e: React.MouseEvent) => {
+    if (!remoteControl) return;
+
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (rect && socketRef.current) {
+      const x = (e.clientX - rect.left) / rect.width;
+      const y = (e.clientY - rect.top) / rect.height;
+
+      socketRef.current.emit('remote-control', {
+        type: 'click',
+        x,
+        y,
+        sessionId
+      });
+    }
+  };
+
+  const handleCanvasMouseMove = (e: React.MouseEvent) => {
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (rect) {
+      setMousePos({
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top
+      });
+    }
+
+    if (remoteControl && rect && socketRef.current) {
+      const x = (e.clientX - rect.left) / rect.width;
+      const y = (e.clientY - rect.top) / rect.height;
+
+      socketRef.current.emit('remote-control', {
+        type: 'move',
+        x,
+        y,
+        sessionId
+      });
+    }
+  };
+
+  // Canvas rendering loop
   useEffect(() => {
     let animationFrameId: number;
-    let frameCount = 0;
 
     const renderLoop = () => {
-      if (videoRef.current && canvasRef.current && mode === 'viewer') {
-        const ctx = canvasRef.current.getContext('2d');
+      if (canvasRef.current && videoRef.current && (isSharing || isConnected)) {
+        const canvas = canvasRef.current;
         const video = videoRef.current;
-
-        // Ensure stream is attached if it's available and not yet set
-        if (remoteStream && video.srcObject !== remoteStream) {
-          console.log('🔗 Attaching remoteStream to video element in render loop');
-          video.srcObject = remoteStream;
-          video.play().catch(e => console.error('❌ Play error in loop:', e));
-        }
-
-        // Log every 60 frames
-        if (frameCount % 60 === 0) {
-          console.log('Canvas render loop:', {
-            videoReadyState: video.readyState,
-            videoWidth: video.videoWidth,
-            videoHeight: video.videoHeight,
-            hasContext: !!ctx,
-            remoteStreamActive: remoteStream?.active,
-            videoSrc: video.srcObject ? 'Attached' : 'Empty'
-          });
-        }
+        const ctx = canvas.getContext('2d');
 
         if (ctx && video.readyState >= video.HAVE_CURRENT_DATA) {
-          ctx.drawImage(video, 0, 0, canvasRef.current.width, canvasRef.current.height);
-          if (frameCount === 0) console.log('✅ First frame drawn!');
-        } else if (frameCount % 60 === 0) {
-          console.warn('⚠️ Video not ready for drawing (readyState:', video.readyState, ')');
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         }
-
-        frameCount++;
       }
       animationFrameId = requestAnimationFrame(renderLoop);
     };
 
-    if (mode === 'viewer') {
-      console.log('🎬 Starting canvas rendering loop for viewer');
-      renderLoop();
-    }
-
+    renderLoop();
     return () => {
-      if (animationFrameId) {
-        cancelAnimationFrame(animationFrameId);
-      }
+      cancelAnimationFrame(animationFrameId);
     };
-  }, [mode, remoteStream]);
+  }, [isSharing, isConnected]);
 
-  const handleCanvasClick = (e: React.MouseEvent) => {
-    if (!remoteControl || !socketRef.current) return;
+  // --- Render Functions ---
 
-    const rect = canvasRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-
-    setMousePos({ x, y });
-
-    socketRef.current.emit('remote-input', {
-      sessionId: sessionId,
-      type: 'mouseclick',
-      x: x,
-      y: y,
-      button: 'left'
-    });
+  const handleHomeClick = () => {
+    handleModeChange('home');
   };
 
-  const handleCanvasMouseMove = (e: React.MouseEvent) => {
-    if (!remoteControl || !socketRef.current) return;
+  const currentView = () => {
+    if (mode === 'home') {
+      return <WelcomeScreen
+        onHostClick={() => handleModeChange('host')}
+        onClientClick={(id) => {
+          setInputSessionId(id);
+          proceedConnection();
+        }}
+      />;
+    }
 
-    const rect = canvasRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    if (mode === 'host') {
+      return <Dashboard
+        sessionId={sessionId}
+        isSharing={isSharing}
+        viewerCount={viewerCount}
+        logs={logs}
+        onStartShare={startScreenShare}
+        onStopShare={stopScreenShare}
+        onJoinClick={() => handleModeChange('home')}
+        onHomeClick={handleHomeClick}
+      />;
+    }
 
-    setMousePos({ x, y });
+    if (mode === 'client') {
+      return renderClient();
+    }
 
-    socketRef.current.emit('remote-input', {
-      sessionId: sessionId,
-      type: 'mousemove',
-      x: x,
-      y: y
-    });
+    return null;
+  };
+
+  // Client Render with Timeout Logic
+  const renderClient = () => {
+    return (
+      <div className={`transition-all duration-500 ease-in-out ${isTransitioning ? 'opacity-0 scale-95 blur-md' : 'opacity-100 scale-100 blur-0'}`}>
+        <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col relative overflow-hidden font-sans">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,_rgba(67,56,202,0.1),_rgba(2,6,23,0.7))]"></div>
+
+          <div className="relative z-10 flex flex-col h-screen">
+            {!isConnected ? (
+              <div className="flex-1 flex items-center justify-center">
+                <div className="text-center">
+                  {!connectionTimedOut ? (
+                    <>
+                      <div className="w-20 h-20 bg-indigo-500/10 rounded-3xl flex items-center justify-center mx-auto mb-6 border border-indigo-500/20 animate-pulse">
+                        <Zap className="w-10 h-10 text-indigo-400" />
+                      </div>
+                      <h2 className="text-3xl font-black text-white mb-2 tracking-tight">Connecting...</h2>
+                      <p className="text-slate-500 max-w-xs mx-auto">Establishing secure end-to-end channel to <span className="text-indigo-400 font-mono">{sessionId}</span></p>
+                    </>
+                  ) : (
+                    <div className="animate-fade-in p-8 bg-slate-900/40 backdrop-blur-3xl border border-white/5 rounded-[2.5rem] shadow-2xl">
+                      <div className="w-20 h-20 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-6 border border-red-500/20">
+                        <Activity className="w-10 h-10 text-red-500" />
+                      </div>
+                      <h2 className="text-3xl font-black text-white mb-2 tracking-tight">Access Denied</h2>
+                      <p className="text-slate-400 max-w-sm mx-auto mb-8 leading-relaxed">
+                        Handshake timed out for session <span className="font-mono text-red-400 font-bold">{sessionId}</span>.
+                        Ensure the host is online and sharing.
+                      </p>
+                      <div className="flex items-center gap-4 justify-center">
+                        <button
+                          onClick={() => {
+                            setConnectionTimedOut(false);
+                            proceedConnection();
+                          }}
+                          className="px-8 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-black text-sm tracking-widest transition-all shadow-xl shadow-indigo-600/30"
+                        >
+                          RETRY HANDSHAKE
+                        </button>
+                        <button onClick={handleHomeClick} className="px-8 py-3 bg-white/5 hover:bg-white/10 text-slate-400 rounded-2xl font-bold transition-all">
+                          CANCEL
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  {!connectionTimedOut && (
+                    <button onClick={handleHomeClick} className="mt-8 text-slate-500 hover:text-slate-300 font-bold uppercase tracking-widest text-xs transition-colors underline underline-offset-8">Abort Connection Attempt</button>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="bg-black/40 backdrop-blur-2xl border-b border-white/5 px-8 py-4 flex items-center justify-between">
+                  <div className="flex items-center gap-6">
+                    <div className="flex items-center gap-3">
+                      <div className="w-2.5 h-2.5 bg-green-500 rounded-full animate-pulse shadow-[0_0_12px_rgba(34,197,94,0.6)]"></div>
+                      <span className="font-black text-white tracking-tight uppercase text-sm">Target: {sessionId}</span>
+                    </div>
+
+                    <div className={`flex items-center gap-2 px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest border ${networkQuality === 'good' ? 'bg-green-500/10 text-green-400 border-green-500/20' :
+                      networkQuality === 'poor' ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' :
+                        'bg-red-500/10 text-red-400 border-red-500/20'
+                      }`}>
+                      <Wifi className={`w-3 h-3 ${networkQuality !== 'good' ? 'animate-pulse' : ''}`} />
+                      Signal: {networkQuality}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => setRemoteControl(!remoteControl)}
+                      className={`px-5 py-2.5 rounded-xl font-black text-[10px] tracking-widest uppercase flex items-center gap-2 transition-all border ${remoteControl
+                        ? 'bg-indigo-600 text-white border-transparent shadow-lg shadow-indigo-600/20'
+                        : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10'
+                        }`}
+                    >
+                      <MousePointer className="w-3 h-3" />
+                      Interaction: {remoteControl ? 'ACTIVE' : 'LOCKED'}
+                    </button>
+                    <button
+                      onClick={() => setIsConnected(false)}
+                      className="px-5 py-2.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 rounded-xl font-black text-[10px] tracking-widest uppercase transition-all"
+                    >
+                      DISCONNECT
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex-1 bg-black flex items-center justify-center relative group overflow-hidden">
+                  <canvas
+                    ref={canvasRef}
+                    width={1280}
+                    height={720}
+                    className="max-h-full max-w-full object-contain shadow-2xl"
+                    onMouseMove={(e) => {
+                      if (!remoteControl) return;
+                      handleCanvasMouseMove(e);
+                    }}
+                    onClick={handleCanvasClick}
+                  />
+
+                  {!remoteControl && (
+                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all backdrop-blur-[2px] pointer-events-none">
+                      <div className="bg-slate-900/80 border border-white/10 px-8 py-4 rounded-2xl text-center shadow-2xl">
+                        <Shield className="w-10 h-10 mx-auto mb-3 text-indigo-400 opacity-50" />
+                        <p className="text-white font-black text-xs tracking-widest uppercase">Remote Control Restricted</p>
+                        <p className="text-slate-500 text-[10px] mt-1 font-bold">ENABLE INTERACTION TO CONTROL TARGET</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    );
   };
 
   return (
     <>
-      {mode === 'dashboard' && (
-        <Dashboard
-          onNewSession={() => setMode('host')}
-          onHostClick={() => setMode('host')}
-          onJoinClick={() => setMode('join')}
-        />
-      )}
+      <style>{`
+        @keyframes blob {
+          0% { transform: translate(0px, 0px) scale(1); }
+          33% { transform: translate(30px, -50px) scale(1.1); }
+          66% { transform: translate(-20px, 20px) scale(0.9); }
+          100% { transform: translate(0px, 0px) scale(1); }
+        }
+        .animate-blob { animation: blob 7s infinite; }
+        .animation-delay-2000 { animation-delay: 2s; }
+        .animation-delay-4000 { animation-delay: 4s; }
+      `}</style>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@100;300;400;700;900&display=swap');
+        body { font-family: 'Outfit', sans-serif; background: #020617; }
+        .transition-layer {
+            position: fixed; inset: 0; z-index: 100; pointer-events: none;
+            background: #6366f1; opacity: 0; transition: opacity 0.4s ease-in-out;
+        }
+        .transition-active { opacity: 0.1; }
+      `}</style>
 
-      {mode === 'home' && (
-        <WelcomeScreen
-          onHostClick={() => setMode('host')}
-          onClientClick={() => setMode('join')}
-        />
-      )}
+      <div className={`transition-all duration-500 ease-in-out ${isTransitioning ? 'opacity-0 scale-95 blur-xl' : 'opacity-100 scale-100 blur-0'}`}>
+        {currentView()}
+      </div>
 
-      {mode === 'host' && (
-        <HostDashboardEnhanced
-          isSharing={isSharing}
-          sessionId={sessionId}
-          sessionPassword={sessionPassword}
-          viewerCount={viewerCount}
-          videoRef={videoRef}
-          onStartShare={startScreenShare}
-          onStopShare={stopScreenShare}
-          onBack={() => {
-            stopScreenShare();
-            setMode('dashboard');
-          }}
-        />
-      )}
+      <div className={`transition-layer ${isTransitioning ? 'transition-active' : ''}`}></div>
 
-      {mode === 'join' && (
-        <JoinSessionScreen
-          inputSessionId={inputSessionId}
-          inputPassword={inputPassword}
-          onSessionIdChange={setInputSessionId}
-          onPasswordChange={setInputPassword}
-          onConnect={connectToSession}
-          onBack={() => setMode('dashboard')}
-        />
-      )}
-
-      {mode === 'viewer' && (
-        <ActiveSessionViewerEnhanced
-          sessionId={sessionId}
-          remoteControl={remoteControl}
-          mousePos={mousePos}
-          videoRef={videoRef}
-          canvasRef={canvasRef}
-          onToggleControl={() => setRemoteControl(!remoteControl)}
-          onDisconnect={() => {
-            setMode('dashboard');
-            setRemoteControl(false);
-          }}
-          onCanvasClick={handleCanvasClick}
-          onCanvasMouseMove={handleCanvasMouseMove}
-        />
-      )}
+      {/* Hidden video element for WebRTC stream */}
+      <video ref={videoRef} className="hidden" autoPlay playsInline muted />
     </>
   );
+}
+
+// Global Map Component (Mock)
+function GlobalMapView() {
+  return (
+    <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-xl animate-fade-in p-12 flex items-center justify-center">
+      <div className="text-white text-center">
+        <Globe className="w-24 h-24 text-blue-500 mx-auto mb-6 animate-pulse" />
+        <h2 className="text-3xl font-bold mb-2">Global Network Map</h2>
+        <p className="text-slate-400">Visualizing active connections (Mock Data)</p>
+        {/* SVG Map would go here */}
+      </div>
+    </div>
+  )
 }

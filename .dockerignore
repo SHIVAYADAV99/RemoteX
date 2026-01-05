@@ -1,0 +1,8 @@
+**/node_modules
+**/dist
+**/release
+.git
+.gitignore
+*.log
+docker-compose.yml
+*.Dockerfile
