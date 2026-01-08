@@ -26,6 +26,8 @@ const PORT = process.env.PORT || 3001;
 
 // Store active sessions and offers
 const sessions = {};
+// Store persistent device metadata (FLEET MANAGEMENT)
+const deviceInventory = {};
 
 io.on('connection', (socket) => {
   console.log(`[SIGNAL] Client connected: ${socket.id}`);
@@ -122,8 +124,91 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Enterprise Feature Relays (Phase 2 & 3)
+  socket.on('clipboard-sync', ({ content, roomId }) => {
+    socket.to(roomId).emit('clipboard-sync', { content });
+  });
+
+  socket.on('file-transfer', (data) => {
+    const { roomId } = data;
+    socket.to(roomId).emit('file-transfer', data);
+  });
+
+  socket.on('chat-message', (data) => {
+    const { roomId } = data;
+    socket.to(roomId).emit('chat-message', data);
+  });
+
+  socket.on('system-info', (data) => {
+    const { roomId, info } = data;
+    socket.to(roomId).emit('system-info', info);
+  });
+
+  socket.on('process-list', (data) => {
+    const { roomId, processes } = data;
+    socket.to(roomId).emit('process-list', { processes });
+  });
+
+  socket.on('system-event-logs', (data) => {
+    const { roomId, logs } = data;
+    socket.to(roomId).emit('system-event-logs', { logs });
+  });
+
+  socket.on('kill-process-request', (data) => {
+    // This could be just a pid string or an object {pid, roomId}
+    const pid = typeof data === 'string' ? data : data.pid;
+    const roomId = typeof data === 'object' ? data.roomId : null;
+    if (roomId) {
+      socket.to(roomId).emit('kill-process-request', pid);
+    }
+  });
+
+  socket.on('run-maintenance-request', (data) => {
+    const type = typeof data === 'string' ? data : data.type;
+    const roomId = typeof data === 'object' ? data.roomId : null;
+    if (roomId) {
+      socket.to(roomId).emit('run-maintenance-request', type);
+    }
+  });
+
+  // --- LOGMEIN PIVOT: FLEET MANAGEMENT ---
+
+  socket.on('device-register', (data) => {
+    const { deviceId, hostname, os, platform, uptime } = data;
+    console.log(`[FLEET] 📝 Registering device: ${hostname} (${deviceId})`);
+
+    deviceInventory[deviceId] = {
+      deviceId,
+      hostname,
+      os,
+      platform,
+      uptime,
+      lastSeen: new Date().toISOString(),
+      socketId: socket.id,
+      status: 'online'
+    };
+
+    // Broadcast update to all clients watching the inventory
+    io.emit('fleet-update', Object.values(deviceInventory));
+  });
+
+  socket.on('get-fleet-list', () => {
+    socket.emit('fleet-update', Object.values(deviceInventory));
+  });
+
   socket.on('disconnect', () => {
     console.log(`[SIGNAL] Client disconnected: ${socket.id}`);
+
+    // Update fleet status
+    Object.keys(deviceInventory).forEach(dId => {
+      if (deviceInventory[dId].socketId === socket.id) {
+        console.log(`[FLEET] 💤 Device offline: ${deviceInventory[dId].hostname}`);
+        deviceInventory[dId].status = 'offline';
+        deviceInventory[dId].socketId = null;
+        io.emit('fleet-update', Object.values(deviceInventory));
+      }
+    });
+
     Object.keys(sessions).forEach(roomId => {
       const session = sessions[roomId];
       if (session.hostId === socket.id) {

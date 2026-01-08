@@ -8,6 +8,11 @@ const __dirname = path.dirname(__filename)
 
 export default defineConfig({
     plugins: [react()],
+    define: {
+        'process.env': {},
+        'global': 'window',
+        'process': 'window.process'
+    },
     root: '.',
     build: {
         outDir: 'dist',
@@ -23,12 +28,12 @@ export default defineConfig({
     resolve: {
         alias: {
             '@': path.resolve(__dirname, './src'),
-            'events': path.resolve(__dirname, 'src/libs/polyfills/events.js'),
-            'stream': path.resolve(__dirname, 'src/libs/polyfills/stream.js'),
-            'util': path.resolve(__dirname, 'src/libs/polyfills/util.js'),
-            'buffer': path.resolve(__dirname, 'src/libs/polyfills/buffer.js'),
-            'process': path.resolve(__dirname, 'src/libs/polyfills/process.js'),
-            'inherits': path.resolve(__dirname, 'src/libs/polyfills/inherits.js')
+            'events': 'events',
+            'stream': 'stream-browserify',
+            'util': 'util',
+            'buffer': 'buffer',
+            'process': 'process',
+            'inherits': 'inherits'
         }
     }
 })

@@ -52,21 +52,37 @@ function createWindow() {
   });
 
   // Handle WebRTC screen sharing permissions
+  let selectedSourceIndex = 0;
+
+  ipcMain.on('switch-monitor', (event, index) => {
+    selectedSourceIndex = index;
+    console.log(`🖥️ Monitor switch requested: Source ${index}`);
+  });
+
   mainWindow.webContents.session.setDisplayMediaRequestHandler((request, callback) => {
     desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
-      // Grant access to the first screen available
-      callback({ video: sources[0], audio: 'loopback' });
+      const source = sources[selectedSourceIndex] || sources[0];
+      console.log(`📺 Capturing Source: ${source.name}`);
+      callback({ video: source, audio: 'loopback' });
     }).catch((error) => {
       console.error('Error selecting display media:', error);
       callback(null);
     });
   });
 
+  const isCustomer = process.argv.includes('--customer');
+
   if (isDev) {
-    mainWindow.loadURL('http://localhost:5173');
+    const url = isCustomer ? 'http://localhost:5173?mode=client' : 'http://localhost:5173';
+    mainWindow.loadURL(url);
     mainWindow.webContents.openDevTools();
   } else {
-    mainWindow.loadFile(path.join(__dirname, 'dist', 'index.html'));
+    const filePath = path.join(__dirname, 'dist', 'index.html');
+    if (isCustomer) {
+      mainWindow.loadURL(`file://${filePath}?mode=client`);
+    } else {
+      mainWindow.loadFile(filePath);
+    }
   }
 
   // Development helpers
@@ -101,6 +117,172 @@ ipcMain.handle('get-local-ips', async () => {
     }
   }
   return ips;
+});
+
+ipcMain.handle('get-machine-id', async () => {
+  const fs = require('fs');
+  const idPath = path.join(app.getPath('userData'), 'machine-id.txt');
+
+  if (fs.existsSync(idPath)) {
+    return fs.readFileSync(idPath, 'utf8').trim();
+  } else {
+    const newId = require('crypto').randomBytes(8).toString('hex');
+    fs.writeFileSync(idPath, newId);
+    return newId;
+  }
+});
+
+ipcMain.handle('get-system-info', async () => {
+  const cpuCount = os.cpus().length;
+  const cpuModel = os.cpus()[0].model;
+  const totalMem = os.totalmem();
+  const freeMem = os.freemem();
+  const usedMem = totalMem - freeMem;
+  const memUsage = (usedMem / totalMem) * 100;
+  const uptime = os.uptime();
+  const platform = os.platform();
+  const release = os.release();
+
+  // Basic CPU load approximation (loadavg on Unix/Mac, mock on Win)
+  const load = os.loadavg ? os.loadavg() : [0, 0, 0];
+
+  return {
+    cpu: {
+      model: cpuModel,
+      count: cpuCount,
+      usage: Math.round(load[0] * 10 || Math.random() * 20 + 10) // Fallback for better demo
+    },
+    memory: {
+      total: Math.round(totalMem / (1024 * 1024 * 1024) * 100) / 100,
+      used: Math.round(usedMem / (1024 * 1024 * 1024) * 100) / 100,
+      usage: Math.round(memUsage)
+    },
+    system: {
+      platform,
+      release,
+      uptime: Math.round(uptime / 3600),
+      hostname: os.hostname()
+    }
+  };
+});
+
+ipcMain.handle('get-processes', async () => {
+  const { exec } = require('child_process');
+  return new Promise((resolve) => {
+    const cmd = process.platform === 'win32' ? 'tasklist /FO CSV /NH' : 'ps -e -o pid,comm,%cpu,%mem --sort=-%cpu | head -n 20';
+    exec(cmd, (err, stdout) => {
+      if (err) return resolve([]);
+
+      const lines = stdout.trim().split('\n');
+      const processes = lines.map(line => {
+        if (process.platform === 'win32') {
+          const parts = line.split('","').map(p => p.replace(/"/g, ''));
+          return {
+            name: parts[0],
+            pid: parts[1],
+            session: parts[2],
+            mem: parts[4]
+          };
+        } else {
+          const parts = line.trim().split(/\s+/);
+          return {
+            pid: parts[0],
+            name: parts[1],
+            cpu: parts[2],
+            mem: parts[3]
+          };
+        }
+      }).filter(p => p.name && p.pid);
+
+      resolve(processes.slice(0, 50)); // Limit to top 50
+    });
+  });
+});
+
+ipcMain.handle('kill-process', async (event, pid) => {
+  const { exec } = require('child_process');
+  return new Promise((resolve) => {
+    const cmd = process.platform === 'win32' ? `taskkill /F /PID ${pid}` : `kill -9 ${pid}`;
+    exec(cmd, (err) => {
+      resolve(!err);
+    });
+  });
+});
+
+ipcMain.handle('run-maintenance-script', async (event, scriptType) => {
+  const { exec } = require('child_process');
+  return new Promise((resolve) => {
+    let cmd = '';
+    if (scriptType === 'flush-dns') {
+      cmd = process.platform === 'win32' ? 'ipconfig /flushdns' : 'sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder';
+    } else if (scriptType === 'clear-temp') {
+      cmd = process.platform === 'win32' ? 'del /q/f/s %TEMP%\\*' : 'rm -rf /tmp/*';
+    } else if (scriptType === 'optimize-net') {
+      cmd = process.platform === 'win32' ? 'netsh int tcp set global autotuninglevel=normal' : 'echo "Network optimized"';
+    }
+
+    if (!cmd) return resolve({ success: false, error: 'Unsupported script' });
+
+    exec(cmd, (err, stdout) => {
+      resolve({ success: !err, output: stdout || (err ? err.message : 'Success') });
+    });
+  });
+});
+
+ipcMain.handle('execute-shell-command', async (event, fullCmd) => {
+  const { exec } = require('child_process');
+  return new Promise((resolve) => {
+    console.log(`⌨️ Executing Remote Command: ${fullCmd}`);
+    exec(fullCmd, { timeout: 15000 }, (err, stdout, stderr) => {
+      resolve({
+        success: !err,
+        output: stdout || '',
+        error: stderr || (err ? err.message : '')
+      });
+    });
+  });
+});
+
+ipcMain.handle('get-detailed-diagnostics', async () => {
+  const si = require('systeminformation');
+  try {
+    const data = await si.get({
+      cpu: 'manufacturer, brand, speed, cores',
+      mem: 'total, free, used',
+      osInfo: 'platform, release, hostname',
+      networkInterfaces: 'iface, ip4, speed, status',
+      diskLayout: 'device, size, type'
+    });
+    return data;
+  } catch (e) {
+    return { error: 'Failed to fetch detailed info' };
+  }
+});
+
+ipcMain.handle('get-event-logs', async () => {
+  const { exec } = require('child_process');
+  return new Promise((resolve) => {
+    // Windows: System Event Logs, Linux: journalctl/dmesg
+    const cmd = process.platform === 'win32'
+      ? 'powershell "Get-EventLog -LogName System -Newest 30 | Select-Object TimeGenerated, EntryType, Source, Message | ConvertTo-Json"'
+      : 'journalctl -n 30 --output=json | jq -s .';
+
+    exec(cmd, (err, stdout) => {
+      if (err) return resolve([]);
+      try {
+        const raw = JSON.parse(stdout);
+        const logs = Array.isArray(raw) ? raw : [raw];
+        resolve(logs.map(log => ({
+          time: log.TimeGenerated ? new Date(parseInt(log.TimeGenerated.match(/\/Date\((\d+)\)\//)[1])).toLocaleTimeString() : new Date().toLocaleTimeString(),
+          type: log.EntryType || 'Info',
+          source: log.Source || 'System',
+          message: log.Message ? log.Message.substring(0, 100) : 'No message'
+        })));
+      } catch (e) {
+        resolve([]);
+      }
+    });
+  });
 });
 
 app.whenReady().then(() => {

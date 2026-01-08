@@ -206,14 +206,14 @@ MIT License - See LICENSE file for details
 
 ## 🙏 Acknowledgments
 
-Built with modern web technologies and best practices in remote desktop solutions. Inspired by AnyDesk and TeamViewer.
+Built with modern web technologies and best practices in remote desktop solutions. Inspired by AnyDesk.
 
 **Powered by**: Electron • React • WebRTC • Socket.IO • Docker
 
 ---
 
 <div align="center">
-
+S
 **⭐ Star this repo if you find it useful!**
 
 Made with ❤️ by [Shiva Yadav](https://github.com/SHIVAYADAV99)

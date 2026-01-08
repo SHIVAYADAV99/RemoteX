@@ -1,177 +1,258 @@
 import React from 'react';
-import { Monitor, Share2, Zap, Lock, Gamepad2, Globe } from 'lucide-react';
+import { Monitor, Share2, Zap, Lock, Globe, Shield, ArrowRight, XCircle, AlertCircle, Activity, ShieldCheck, UserPlus } from 'lucide-react';
 
 interface WelcomeScreenProps {
-    onHostClick: () => void;
+    onHostClick: (id?: string, pass?: string) => boolean;
     onClientClick: (id: string) => void;
     publicIP?: string;
+    clientOnly?: boolean;
+    consoleType?: string;
 }
 
-export default function WelcomeScreen({ onHostClick, onClientClick, publicIP = 'Fetching...' }: WelcomeScreenProps) {
+export default function WelcomeScreen({
+    onHostClick,
+    onClientClick,
+    publicIP = 'Fetching...',
+    clientOnly = false,
+    consoleType = 'UNDEFINED'
+}: WelcomeScreenProps) {
     const [localInputId, setLocalInputId] = React.useState('');
-    const [mousePos, setMousePos] = React.useState({ x: 0, y: 0 });
+    const [showLogin, setShowLogin] = React.useState(false);
+    const [showClientInput, setShowClientInput] = React.useState(false);
+    const [id, setId] = React.useState('');
+    const [password, setPassword] = React.useState('');
+    const [error, setError] = React.useState('');
     const inputRefs = React.useRef<(HTMLInputElement | null)[]>([]);
 
-    React.useEffect(() => {
-        const handleMouseMove = (e: MouseEvent) => {
-            setMousePos({ x: e.clientX, y: e.clientY });
-        };
-        window.addEventListener('mousemove', handleMouseMove);
-        return () => window.removeEventListener('mousemove', handleMouseMove);
-    }, []);
-
-    const handleCharChange = (index: number, value: string) => {
-        const char = value.toUpperCase().slice(-1);
-        if (!char.match(/[A-Z0-9]/) && char !== '') return;
-
-        const newId = localInputId.split('');
-        newId[index] = char;
-        const finalId = newId.join('');
-        setLocalInputId(finalId);
-
-        if (char && index < 7) {
-            inputRefs.current[index + 1]?.focus();
+    const handleLogin = () => {
+        const success = onHostClick(id, password);
+        if (success) {
+            setError('');
+        } else {
+            setError('Invalid Technician ID or Password');
         }
     };
 
-    const handleKeyDown = (index: number, e: React.KeyboardEvent) => {
-        if (e.key === 'Backspace' && !localInputId[index] && index > 0) {
-            inputRefs.current[index - 1]?.focus();
-        }
-    };
-
-    return (
-        <div className="min-h-screen bg-[#020617] text-slate-100 relative overflow-hidden flex items-center justify-center font-sans">
-            {/* Dynamic Mouse Glow */}
-            <div
-                className="pointer-events-none absolute inset-0 z-0 transition-opacity duration-500"
-                style={{
-                    background: `radial-gradient(600px circle at ${mousePos.x}px ${mousePos.y}px, rgba(99, 102, 241, 0.15), transparent 80%)`
-                }}
-            ></div>
-
-            {/* Background Layers */}
-            <div className="absolute inset-0 z-0">
-                <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-purple-600/10 rounded-full blur-[120px] animate-pulse"></div>
-                <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-indigo-600/10 rounded-full blur-[120px] animate-pulse" style={{ animationDelay: '2s' }}></div>
-                <div className="world-map-overlay bg-world-map opacity-[0.03] scale-110"></div>
+    const renderClientInputView = () => (
+        <div className="min-h-screen bg-mesh animate-mesh flex items-center justify-center p-6 font-sans">
+            {/* Decorative Elements */}
+            <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-400/10 rounded-full blur-[120px] animate-float-subtle"></div>
+                <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-indigo-400/10 rounded-full blur-[120px] animate-float-subtle" style={{ animationDelay: '-3s' }}></div>
             </div>
 
-            <div className="relative z-10 text-center px-6 max-w-6xl w-full">
-                {/* Brand Section */}
-                <div className="mb-12 animate-fade-in">
-                    <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 rounded-[2rem] shadow-2xl shadow-indigo-500/40 mb-8 animate-float relative group">
-                        <div className="absolute inset-0 bg-white/20 rounded-[2rem] blur-xl group-hover:blur-2xl transition-all"></div>
-                        <Monitor className="w-10 h-10 text-white relative z-10" />
+            <div className="relative z-10 w-full max-w-md animate-fade-in">
+                <div className="glass-morphism rounded-[3rem] p-12 text-center border-white/40 shadow-2xl relative overflow-hidden group">
+                    <button onClick={() => setShowClientInput(false)} className="absolute top-8 left-8 p-2 bg-white/50 hover:bg-white rounded-xl transition-all border border-white/20 group/back">
+                        <ArrowRight className="w-4 h-4 rotate-180 text-slate-400 group-hover:text-blue-600" />
+                    </button>
+
+                    <div className="w-24 h-24 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-[2rem] flex items-center justify-center mx-auto mb-10 shadow-xl shadow-blue-500/20 transform group-hover:scale-110 transition-transform duration-500">
+                        <ShieldCheck className="w-12 h-12 text-white" />
                     </div>
-                    <h1 className="text-7xl font-black text-white mb-2 tracking-tighter bg-clip-text text-transparent bg-gradient-to-b from-white to-white/50">
-                        RemoteX
-                    </h1>
-                    <div className="flex items-center justify-center gap-3">
-                        <span className="h-[1px] w-8 bg-gradient-to-r from-transparent to-indigo-500"></span>
-                        <p className="text-sm text-indigo-300 font-bold uppercase tracking-[0.4em]">AETHER-STREAMS v2.5</p>
-                        <span className="h-[1px] w-8 bg-gradient-to-l from-transparent to-indigo-500"></span>
+
+                    <h2 className="text-4xl font-black text-slate-800 mb-2 tracking-tight">Enter Token</h2>
+                    <div className="flex items-center justify-center gap-2 mb-8">
+                        <div className="px-3 py-1 bg-blue-50/50 backdrop-blur-md rounded-full text-[10px] font-black text-blue-600 uppercase tracking-widest border border-blue-100">Encrypted Handshake</div>
+                    </div>
+
+                    <div className="space-y-8 max-w-sm mx-auto">
+                        <div className="relative">
+                            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4">Secure Session Token</label>
+                            <div className="p-1 bg-slate-900/5 rounded-3xl border border-white/50 shadow-inner">
+                                <input
+                                    type="text"
+                                    value={localInputId}
+                                    onChange={(e) => setLocalInputId(e.target.value.toUpperCase().slice(0, 8))}
+                                    placeholder="•••• ••••"
+                                    className="w-full py-5 bg-transparent text-center font-mono text-3xl font-black text-[#004172] tracking-[0.4em] outline-none placeholder:text-slate-300"
+                                    autoFocus
+                                    onKeyDown={(e) => e.key === 'Enter' && localInputId.length >= 6 && onClientClick(localInputId)}
+                                />
+                            </div>
+                        </div>
+
+                        <button
+                            onClick={() => onClientClick(localInputId)}
+                            disabled={localInputId.length < 6}
+                            className={`w-full py-6 rounded-3xl font-black text-xs tracking-[0.25em] flex items-center justify-center gap-4 transition-all shadow-2xl uppercase
+                                ${localInputId.length < 6
+                                    ? 'bg-slate-200 text-slate-400 cursor-not-allowed opacity-50'
+                                    : 'bg-gradient-to-r from-blue-600 to-indigo-700 text-white hover:shadow-blue-500/40 active:scale-[0.97]'
+                                }`}
+                        >
+                            CONNECT TO NODE
+                            <Zap className="w-4 h-4 fill-white animate-pulse" />
+                        </button>
                     </div>
                 </div>
+            </div>
+        </div>
+    );
 
-                {/* Main Action Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-5 gap-8 mb-16 items-stretch">
-                    {/* Host Panel */}
-                    <div className="md:col-span-2 group relative">
-                        <div className="absolute -inset-0.5 bg-gradient-to-r from-purple-500 to-indigo-500 rounded-[2.5rem] blur opacity-25 group-hover:opacity-50 transition duration-1000"></div>
-                        <div className="relative h-full bg-[#0a0f1e]/80 backdrop-blur-3xl border border-white/5 rounded-[2.5rem] p-10 flex flex-col items-center justify-center transition-all duration-500">
-                            <div className="inline-flex items-center justify-center w-16 h-16 bg-purple-500/10 rounded-2xl mb-6 border border-purple-500/20 group-hover:scale-110 transition-transform">
-                                <Share2 className="w-8 h-8 text-purple-400" />
+    if (clientOnly || showClientInput) {
+        return renderClientInputView();
+    }
+
+    if (showLogin) {
+        return (
+            <div className="min-h-screen bg-mesh animate-mesh flex items-center justify-center p-6 font-sans">
+                <div className="relative z-10 w-full max-w-md animate-fade-in">
+                    <div className="glass-morphism rounded-[3.5rem] p-12 border-white/30 shadow-2xl">
+                        <button onClick={() => setShowLogin(false)} className="mb-10 flex items-center gap-3 text-slate-400 hover:text-[#004172] transition-all font-black text-[10px] uppercase tracking-widest group">
+                            <div className="p-2 bg-white rounded-xl shadow-sm group-hover:-translate-x-1 transition-transform">
+                                <ArrowRight className="w-4 h-4 rotate-180" />
                             </div>
-                            <h3 className="text-2xl font-black text-white mb-2">Initialize Host</h3>
-                            <p className="text-slate-500 text-xs mb-8 max-w-[200px] leading-relaxed">Broadcast your workspace to the encrypted aether-net instantly.</p>
+                            PORTAL GATEWAY
+                        </button>
 
+                        <div className="text-center mb-12">
+                            <div className="w-24 h-24 bg-gradient-to-br from-slate-800 to-slate-950 rounded-[2.5rem] flex items-center justify-center mx-auto mb-8 shadow-2xl ring-4 ring-slate-100 shadow-slate-900/20">
+                                <Shield className="w-12 h-12 text-indigo-400" />
+                            </div>
+                            <h2 className="text-4xl font-black text-slate-900 tracking-tight">Admin Portal</h2>
+                            <p className="text-slate-400 text-[10px] mt-3 font-black uppercase tracking-[0.3em] flex items-center justify-center gap-2">
+                                <span className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-pulse"></span>
+                                Secure Credential Vault
+                            </p>
+                        </div>
+
+                        <div className="space-y-6">
+                            <div className="group">
+                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 px-2">Technician ID</label>
+                                <div className="relative">
+                                    <UserPlus className="absolute left-6 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-300 group-focus-within:text-indigo-500 transition-colors" />
+                                    <input
+                                        type="text"
+                                        value={id}
+                                        onChange={(e) => setId(e.target.value)}
+                                        placeholder="Admin/Tech ID"
+                                        className="w-full h-16 bg-slate-50 border-2 border-slate-100 rounded-3xl pl-16 pr-6 outline-none focus:border-indigo-500 focus:bg-white transition-all font-bold text-slate-800 placeholder:text-slate-200"
+                                    />
+                                </div>
+                            </div>
+                            <div className="group">
+                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 px-2">Master Code</label>
+                                <div className="relative">
+                                    <Lock className="absolute left-6 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-300 group-focus-within:text-indigo-500 transition-colors" />
+                                    <input
+                                        type="password"
+                                        value={password}
+                                        onChange={(e) => {
+                                            setPassword(e.target.value);
+                                            setError('');
+                                        }}
+                                        placeholder="••••••••"
+                                        className="w-full h-16 bg-slate-50 border-2 border-slate-100 rounded-3xl pl-16 pr-6 outline-none focus:border-indigo-500 focus:bg-white transition-all font-bold text-slate-800 placeholder:text-slate-200"
+                                        onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+                                    />
+                                </div>
+                            </div>
+                            {error && (
+                                <div className="p-4 bg-rose-50 border border-rose-100 rounded-2xl flex items-center gap-3 text-rose-600 text-[11px] font-black uppercase tracking-wider animate-shake">
+                                    <AlertCircle className="w-4 h-4" />
+                                    {error}
+                                </div>
+                            )}
                             <button
-                                onClick={onHostClick}
-                                className="w-full py-4 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-2xl font-black text-[10px] tracking-[0.2em] transition-all shadow-xl shadow-purple-600/20 active:scale-95 flex items-center justify-center gap-2 group/btn"
+                                onClick={handleLogin}
+                                className="w-full py-6 mt-8 bg-slate-900 hover:bg-black text-white rounded-3xl font-black tracking-[0.3em] uppercase text-[11px] shadow-2xl hover:shadow-slate-900/40 active:scale-[0.97] transition-all"
                             >
-                                START SESSION
-                                <Zap className="w-3 h-3 group-hover/btn:animate-pulse" />
+                                AUTHORIZE SESSION
                             </button>
                         </div>
                     </div>
+                </div>
+            </div>
+        );
+    }
 
-                    {/* Join Panel */}
-                    <div className="md:col-span-3 group relative">
-                        <div className="absolute -inset-0.5 bg-gradient-to-r from-indigo-500 to-blue-500 rounded-[2.5rem] blur opacity-25 group-hover:opacity-50 transition duration-1000"></div>
-                        <div className="relative h-full bg-[#0a0f1e]/80 backdrop-blur-3xl border border-white/5 rounded-[2.5rem] p-10 flex flex-col items-center justify-center transition-all duration-500">
-                            <div className="inline-flex items-center justify-center w-16 h-16 bg-indigo-500/10 rounded-2xl mb-6 border border-indigo-500/20 group-hover:scale-110 transition-transform">
-                                <Zap className="w-8 h-8 text-indigo-400" />
-                            </div>
-                            <h3 className="text-2xl font-black text-white mb-2">Intercept Session</h3>
-                            <p className="text-slate-500 text-xs mb-8 leading-relaxed">Enter the unique 8-character hash key to connect.</p>
+    return (
+        <div className="min-h-screen bg-mesh animate-mesh flex items-center justify-center p-6 font-sans">
+            {/* Ambient Background Glows */}
+            <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                <div className="absolute top-[-20%] left-[-10%] w-[60%] h-[60%] bg-blue-500/10 rounded-full blur-[150px] animate-pulse"></div>
+                <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-indigo-500/10 rounded-full blur-[150px] animate-pulse" style={{ animationDelay: '2s' }}></div>
+            </div>
 
-                            <div className="w-full space-y-6">
-                                {/* Character Grid Input */}
-                                <div className="flex justify-center gap-2">
-                                    {[...Array(8)].map((_, i) => (
-                                        <input
-                                            key={i}
-                                            ref={el => inputRefs.current[i] = el}
-                                            type="text"
-                                            value={localInputId[i] || ''}
-                                            onChange={(e) => handleCharChange(i, e.target.value)}
-                                            onKeyDown={(e) => handleKeyDown(i, e)}
-                                            className={`w-10 h-14 bg-black/40 border ${localInputId[i] ? 'border-indigo-500/50 text-white shadow-[0_0_15px_rgba(99,102,241,0.2)]' : 'border-white/10 text-slate-600'} rounded-xl text-center font-mono text-xl font-black outline-none transition-all focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/50`}
-                                            maxLength={1}
-                                        />
-                                    ))}
-                                </div>
-
-                                <button
-                                    onClick={() => onClientClick(localInputId)}
-                                    disabled={localInputId.length < 8}
-                                    className={`w-full py-4 rounded-2xl font-black text-[10px] tracking-[0.2em] transition-all shadow-xl
-                                        ${localInputId.length < 8
-                                            ? 'bg-slate-800/50 text-slate-600 cursor-not-allowed border border-white/5'
-                                            : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-600/30 active:scale-95 border border-indigo-400/20'
-                                        }`}
-                                >
-                                    ESTABLISH UPLINK
-                                </button>
-                            </div>
-                        </div>
+            <div className="relative z-10 w-full max-w-6xl">
+                {/* Visual Branding */}
+                <div className="flex flex-col items-center mb-24 animate-fade-in">
+                    <div className="w-20 h-20 bg-gradient-to-tr from-[#004172] to-[#0078d4] rounded-[2rem] flex items-center justify-center shadow-2xl shadow-blue-900/30 mb-8 border border-white/20">
+                        <Monitor className="w-10 h-10 text-white" />
+                    </div>
+                    <div className="text-center">
+                        <h1 className="text-6xl font-black text-[#004172] tracking-tighter leading-none mb-3">RemoteX <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-400">ULTRA</span></h1>
+                        <p className="text-[12px] text-slate-500 font-black uppercase tracking-[0.6em] ml-2">Secure Managed Support Framework</p>
                     </div>
                 </div>
 
-                {/* Bottom Stats Interface */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-6 animate-fade-in opacity-60 hover:opacity-100 transition-opacity">
-                    {[
-                        { icon: Zap, label: '0.04ms', sub: 'Latency Delay' },
-                        { icon: Lock, label: 'AES-256', sub: 'Encrypted' },
-                        { icon: Globe, label: 'Auto', sub: 'Server Mesh' },
-                        { icon: Monitor, label: '120 FPS', sub: 'Liquid Stream' }
-                    ].map((item, i) => (
-                        <div key={i} className="bg-white/5 backdrop-blur-xl border border-white/5 rounded-2xl p-4 flex items-center gap-4 text-left group hover:bg-white/10 transition-all cursor-default">
-                            <div className="w-10 h-10 bg-indigo-500/10 rounded-xl flex items-center justify-center border border-indigo-500/10 group-hover:border-indigo-500/30">
-                                <item.icon className="w-5 h-5 text-indigo-400" />
+                {/* Main Gateway Rails */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-12 items-stretch px-4">
+
+                    {/* Admin Rail - ONLY in Admin Console or Undefined */}
+                    {consoleType !== 'CUSTOMER' && (
+                        <div className="glass-morphism rounded-[4rem] p-14 flex flex-col items-center text-center animate-fade-in border-white group relative bento-card">
+                            <div className="absolute top-10 right-10 px-4 py-1.5 bg-indigo-500/10 text-[10px] font-black text-indigo-700 rounded-full border border-indigo-200 uppercase tracking-[0.2em] backdrop-blur-md">Admin Portal</div>
+
+                            <div className="w-28 h-28 bg-indigo-50/50 rounded-[2.5rem] flex items-center justify-center mb-10 border-2 border-white ring-8 ring-indigo-50/20 group-hover:scale-110 group-hover:rotate-3 transition-all duration-500">
+                                <Monitor className="w-14 h-14 text-indigo-600" />
                             </div>
-                            <div>
-                                <p className="text-[10px] font-black text-white uppercase tracking-wider">{item.label}</p>
-                                <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">{item.sub}</p>
+
+                            <h2 className="text-4xl font-black text-slate-800 mb-4 tracking-tight">Technician Console</h2>
+                            <p className="text-slate-500/80 text-sm mb-14 max-w-xs leading-relaxed font-semibold">Enterprise dashboard for fleet management, diagnostics, and session orchestration.</p>
+
+                            <button
+                                onClick={() => setShowLogin(true)}
+                                className="w-full py-7 bg-slate-900 hover:bg-black text-white rounded-[2.2rem] font-black text-[11px] tracking-[0.3em] flex items-center justify-center gap-4 transition-all shadow-2xl shadow-slate-900/20 active:scale-[0.98] uppercase"
+                            >
+                                <Lock className="w-4 h-4 text-indigo-400" />
+                                AUTHORIZE CONSOLE
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Client Rail - ONLY in Customer Console or Undefined */}
+                    {consoleType !== 'ADMIN' && (
+                        <div className="glass-morphism rounded-[4rem] p-14 flex flex-col items-center text-center animate-fade-in border-white group relative bento-card" style={{ animationDelay: '0.1s' }}>
+                            <div className="absolute top-10 right-10 px-4 py-1.5 bg-emerald-500/10 text-[10px] font-black text-emerald-700 rounded-full border border-emerald-200 uppercase tracking-[0.2em] backdrop-blur-md">Public Node</div>
+
+                            <div className="w-28 h-28 bg-emerald-50/50 rounded-[2.5rem] flex items-center justify-center mb-10 border-2 border-white ring-8 ring-emerald-50/20 group-hover:scale-110 group-hover:-rotate-3 transition-all duration-500">
+                                <UserPlus className="w-14 h-14 text-emerald-600" />
+                            </div>
+
+                            <h2 className="text-4xl font-black text-slate-800 mb-4 tracking-tight">Receive Support</h2>
+                            <p className="text-slate-500/80 text-sm mb-14 max-w-xs leading-relaxed font-semibold">Immediate session entry point for users requiring technical assistance.</p>
+
+                            <div className="w-full space-y-4">
+                                <button
+                                    onClick={() => setShowClientInput(true)}
+                                    className="w-full py-7 bg-gradient-to-r from-emerald-600 to-teal-700 text-white rounded-[2.2rem] font-black text-[11px] tracking-[0.3em] flex items-center justify-center gap-4 transition-all shadow-2xl shadow-emerald-500/20 active:scale-[0.98] uppercase"
+                                >
+                                    <Zap className="w-5 h-5 fill-white animate-pulse" />
+                                    START SUPPORT SESSION
+                                </button>
                             </div>
                         </div>
-                    ))}
+                    )}
+                </div>
+
+                {/* Precision Indicators */}
+                <div className="mt-24 flex flex-wrap justify-center gap-16 text-slate-400/50 grayscale hover:grayscale-0 transition-all duration-700 font-black">
+                    <div className="flex items-center gap-3">
+                        <Activity className="w-5 h-5" />
+                        <span className="text-[11px] uppercase tracking-[0.4em]">Sub-10ms Latency</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                        <Shield className="w-5 h-5" />
+                        <span className="text-[11px] uppercase tracking-[0.4em]">AES-256 GCM</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                        <Globe className="w-5 h-5" />
+                        <span className="text-[11px] uppercase tracking-[0.4em]">SD-WAN Fabric</span>
+                    </div>
                 </div>
             </div>
-
-            <style>{`
-                @keyframes float {
-                    0%, 100% { transform: translateY(0px) rotate(0deg); }
-                    50% { transform: translateY(-10px) rotate(2deg); }
-                }
-                .animate-float { animation: float 6s ease-in-out infinite; }
-                .animate-fade-in { animation: fadeIn 1s ease-out; }
-                @keyframes fadeIn {
-                    from { opacity: 0; transform: translateY(20px); }
-                    to { opacity: 1; transform: translateY(0); }
-                }
-            `}</style>
         </div>
     );
 }

@@ -1,15 +1,19 @@
-import { Buffer } from './libs/polyfills/buffer.js';
-import { process } from './libs/polyfills/process.js';
-import EventEmitter from './libs/polyfills/events.js';
-import util from './libs/polyfills/util.js';
-import Stream from './libs/polyfills/stream.js';
-import inherits from './libs/polyfills/inherits.js';
+import { Buffer } from 'buffer';
+import process from 'process';
 
+// Set process and globals early
 if (typeof window !== 'undefined') {
+    window.process = process;
     window.global = window;
     window.Buffer = Buffer;
-    window.process = process;
+}
 
+import EventEmitter from 'events';
+import util from 'util';
+import Stream from 'stream';
+import inherits from 'inherits';
+
+if (typeof window !== 'undefined') {
     // Ensure EventEmitter is the function
     let EE = EventEmitter;
     if (EE.default) EE = EE.default;

@@ -123,15 +123,20 @@ io.on('connection', (socket) => {
       socket.join(roomId);
       console.log(`[COMPAT] ${socket.id} joined room ${roomId}`);
 
-      // If a formal session exists, add as client
       const sess = sessions.get(roomId);
       if (sess) {
+        // If a session exists, the newcomer needs to know about the current members
+        // and current members need to know about the newcomer.
         sess.clients.push(socket.id);
         connections.set(socket.id, { role: 'client', sessionId: roomId });
-        console.log(`[COMPAT] Added client ${socket.id} to existing session ${roomId}`);
-        // Notify host
-        io.to(sess.host).emit('client-joined', { clientId: socket.id, totalClients: sess.clients.length });
+
+        // Notify the newcomer about the existing host (could be the customer)
+        socket.emit('user-connected', sess.host);
+
+        // Notify others about the newcomer
         socket.to(roomId).emit('user-connected', socket.id);
+
+        console.log(`[COMPAT] Added ${socket.id} to room ${roomId}. Host is ${sess.host}`);
         return;
       }
 
@@ -142,17 +147,12 @@ io.on('connection', (socket) => {
         passwordHash: null,
         clients: [],
         created: Date.now(),
-        permissions: {
-          viewScreen: true,
-          controlMouse: true,
-          controlKeyboard: true
-        }
+        permissions: { viewScreen: true, controlMouse: true, controlKeyboard: true }
       };
       sessions.set(roomId, session);
       connections.set(socket.id, { role: 'host', sessionId: roomId });
-      console.log(`[COMPAT] Created lightweight session ${roomId} with host ${socket.id}`);
 
-      // Notify others in the room (none yet)
+      // Notify anyone else in the room (unlikely for first joiner)
       socket.to(roomId).emit('user-connected', socket.id);
     } catch (e) {
       console.error('[COMPAT] join-room error:', e);
@@ -327,29 +327,24 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Remote control command
-  socket.on('remote-control', ({ command }) => {
+  // Remote control command (Simplified relay for Two-Client Architecture)
+  socket.on('remote-control', (payload) => {
     const conn = connections.get(socket.id);
-    if (!conn || conn.role !== 'client') {
-      return socket.emit('error', { message: 'Unauthorized' });
-    }
+    if (!conn) return;
 
     const session = sessions.get(conn.sessionId);
     if (!session) return;
 
-    // Check permissions
-    if (command.type === 'mouse' && !session.permissions.controlMouse) {
-      return socket.emit('error', { message: 'Mouse control not permitted' });
+    // If technician (host) sends to customer (clients)
+    if (conn.role === 'host') {
+      session.clients.forEach(clientId => {
+        io.to(clientId).emit('remote-control', payload);
+      });
     }
-    if (command.type === 'keyboard' && !session.permissions.controlKeyboard) {
-      return socket.emit('error', { message: 'Keyboard control not permitted' });
+    // If customer (client) sends to technician (host) - Legacy support
+    else if (conn.role === 'client') {
+      io.to(session.host).emit('remote-control', payload);
     }
-
-    // Forward to host
-    io.to(session.host).emit('remote-control', {
-      fromId: socket.id,
-      command
-    });
   });
 
   // Disconnect handling
@@ -416,6 +411,38 @@ io.on('connection', (socket) => {
     } catch (e) {
       console.error('leave-room error:', e);
     }
+  });
+
+  // Enterprise Feature: Clipboard Sync Relay
+  socket.on('clipboard-sync', ({ content, roomId }) => {
+    socket.to(roomId).emit('clipboard-sync', { content });
+    logger.log('clipboard-sync', { from: socket.id, roomId });
+  });
+
+  // Enterprise Feature: File Transfer Relay
+  socket.on('file-transfer', ({ fileData, fileName, roomId }) => {
+    socket.to(roomId).emit('file-transfer', { fileData, fileName });
+    logger.log('file-transfer', { from: socket.id, roomId, fileName });
+  });
+
+  // Enterprise Feature: Team Permissions Relay
+  socket.on('update-team-permissions', ({ userId, permissions, roomId }) => {
+    socket.to(roomId).emit('team-permissions-updated', { userId, permissions });
+    logger.log('team-permissions-update', { from: socket.id, targetUser: userId, roomId });
+  });
+
+  // Enterprise Feature: Chat System Relay
+  socket.on('chat-message', ({ message, sender, roomId }) => {
+    // Broadcast to everyone in room including sender (for confirmation) or just others? 
+    // Usually relay to others, sender adds locally.
+    socket.to(roomId).emit('chat-message', { message, sender, timestamp: new Date().toISOString() });
+    logger.log('chat-message', { from: socket.id, roomId });
+  });
+
+  // Handle connection rejection
+  socket.on('reject-connection', ({ to }) => {
+    io.to(to).emit('connection-rejected');
+    logger.log('connection-rejected', { from: socket.id, to });
   });
 });
 

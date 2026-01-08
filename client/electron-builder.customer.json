@@ -1,0 +1,102 @@
+{
+    "name": "@remotex/customer-client",
+    "productName": "RemoteX Support",
+    "version": "2.0.0",
+    "description": "RemoteX Customer Support Client - Receive remote assistance",
+    "author": "RemoteX Team",
+    "license": "Proprietary",
+    "main": "main-customer.js",
+    "private": true,
+    "build": {
+        "appId": "com.remotex.customer",
+        "productName": "RemoteX Support",
+        "copyright": "Copyright © 2026 RemoteX",
+        "directories": {
+            "output": "dist-customer",
+            "buildResources": "assets/customer"
+        },
+        "files": [
+            "dist-customer/**/*",
+            "main-customer.js",
+            "preload-customer.js",
+            "!node_modules/**/*",
+            "node_modules/socket.io-client/**/*",
+            "node_modules/simple-peer/**/*"
+        ],
+        "extraMetadata": {
+            "mode": "CUSTOMER",
+            "consoleType": "CUSTOMER_ONLY"
+        },
+        "win": {
+            "target": [
+                "nsis"
+            ],
+            "icon": "assets/customer/icon.ico",
+            "artifactName": "RemoteX-Customer-${version}-Setup.${ext}"
+        },
+        "nsis": {
+            "oneClick": true,
+            "allowToChangeInstallationDirectory": false,
+            "createDesktopShortcut": false,
+            "createStartMenuShortcut": false,
+            "perMachine": false,
+            "runAfterFinish": true,
+            "installerIcon": "assets/customer/installer.ico",
+            "uninstallerIcon": "assets/customer/uninstaller.ico",
+            "license": "LICENSE-CUSTOMER.txt",
+            "warningsAsErrors": false
+        },
+        "mac": {
+            "target": [
+                "dmg"
+            ],
+            "category": "public.app-category.utilities",
+            "icon": "assets/customer/icon.icns",
+            "artifactName": "RemoteX-Customer-${version}.${ext}"
+        },
+        "dmg": {
+            "contents": [
+                {
+                    "x": 130,
+                    "y": 220
+                },
+                {
+                    "x": 410,
+                    "y": 220,
+                    "type": "link",
+                    "path": "/Applications"
+                }
+            ],
+            "title": "RemoteX Customer Support"
+        },
+        "linux": {
+            "target": [
+                "AppImage"
+            ],
+            "category": "Utility",
+            "icon": "assets/customer/icon.png",
+            "artifactName": "RemoteX-Customer-${version}.${ext}"
+        }
+    },
+    "scripts": {
+        "build:customer": "cross-env REACT_APP_MODE=CUSTOMER vite build --config vite.customer.config.js --outDir dist-customer",
+        "package:customer": "electron-builder --config electron-builder.customer.json --win --mac --linux",
+        "package:customer:win": "electron-builder --config electron-builder.customer.json --win",
+        "package:customer:mac": "electron-builder --config electron-builder.customer.json --mac",
+        "package:customer:linux": "electron-builder --config electron-builder.customer.json --linux",
+        "dev:customer": "concurrently \"vite --config vite.customer.config.js\" \"electron main-customer.js\""
+    },
+    "devDependencies": {
+        "electron": "^28.0.0",
+        "electron-builder": "^24.9.1",
+        "vite": "^5.0.0",
+        "cross-env": "^7.0.3",
+        "concurrently": "^8.2.2"
+    },
+    "dependencies": {
+        "react": "^18.2.0",
+        "react-dom": "^18.2.0",
+        "socket.io-client": "^4.6.1",
+        "simple-peer": "^9.11.1"
+    }
+}
